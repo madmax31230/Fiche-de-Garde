@@ -38,7 +38,7 @@ def charger_gabarit_excel(fichier):
             
     return pd.DataFrame(donnees)
 
-fichier_source = "TEST_FEUILLE_DE_GARDE.xlsx"
+fichier_source = "TEST FEUILLE DE GARDE.xlsx"
 
 try:
     # 1. Chargement du tableau depuis le fichier Excel
