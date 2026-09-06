@@ -55,7 +55,7 @@ def charger_gabarit_excel(fichier):
                 
     return pd.DataFrame(donnees)
 
-fichier_source = "TEST_FEUILLE_DE_GARDE.xlsx"
+fichier_source = "TEST FEUILLE DE GARDE.xlsx"
 
 try:
     df = charger_gabarit_excel(fichier_source)
@@ -73,7 +73,7 @@ try:
         st.download_button(
             label="📥 Télécharger la feuille validée (Excel)", 
             data=output.getvalue(), 
-            file_name="Feuille_Garde_Modifiee.xlsx",
+            file_name="Feuille Garde Modifiee.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
