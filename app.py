@@ -6,6 +6,7 @@ st.title("🚒 Feuille de Garde")
 
 @st.cache_data
 def charger_gabarit(fichier):
+    # Lecture avec encodage latin-1 pour les fichiers Windows/Excel
     with open(fichier, 'r', encoding='latin-1') as f:
         lignes = f.readlines()
         
@@ -25,15 +26,34 @@ def charger_gabarit(fichier):
         # Nettoyage des espaces autour de chaque élément
         elements = [e.strip() for e in ligne.split(',')]
         
-        # 1. Détection d'un agrès (si l'élément 1 est un chiffre, ex: VSAV, 17)
+        # 1. Détection d'un agrès
         if elements[0] not in fonctions_valides and elements[0] not in mots_ignores and len(elements) > 1 and elements[1].isdigit():
             agres = elements[0]
             
-        # 2. Détection d'une fonction sous l'agrès en cours
+        # 2. Détection d'une fonction sous l'agrès
         elif agres and elements[0] in fonctions_valides:
-            # Récupérer un nom si déjà présent dans le CSV d'origine
             personnel = elements[1] if len(elements) > 1 and elements[1] != "" else ""
             donnees.append({"Agrès": agres, "Fonction": elements[0], "Personnel": personnel})
             
     return pd.DataFrame(donnees)
-st.download_button(label="📥 Télécharger la feuille (Excel)", data=output.getvalue(), file_name="feuille_de_garde.xlsx")
+
+# 1. Chargement du tableau
+df = charger_gabarit("TEST_FEUILLE_DE_GARDE_BILLET.csv")
+
+st.write("Affectation des équipages :")
+
+# 2. Affichage du tableau modifiable en ligne
+df_modifie = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+
+# 3. Création du fichier Excel en mémoire (C'est ici que 'output' est défini)
+output = BytesIO()
+with pd.ExcelWriter(output, engine='openpyxl') as writer:
+    df_modifie.to_excel(writer, index=False, sheet_name='Garde')
+
+# 4. Bouton de téléchargement
+st.download_button(
+    label="📥 Télécharger la feuille (Excel)", 
+    data=output.getvalue(), 
+    file_name="feuille_de_garde.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
