@@ -66,7 +66,6 @@ def charger_donnees(fichier):
     try:
         df_effectif = pd.read_excel(fichier, sheet_name='EFFECTIF')
         if 'NOM' in df_effectif.columns and 'PRENOM' in df_effectif.columns:
-            # On combine Nom, Prénom et Spécialité/Grade si disponibles
             def formater_agent(row):
                 nom = str(row.get('NOM', '')).strip()
                 prenom = str(row.get('PRENOM', '')).strip()
@@ -85,12 +84,9 @@ def charger_donnees(fichier):
                 return base
 
             df_effectif['AGENT_LABEL'] = df_effectif.apply(formater_agent, axis=1)
-            # On garde aussi une correspondance pour extraire juste le nom si besoin lors de l'export
             df_effectif['NOM_SIMPLE'] = df_effectif['NOM'].astype(str) + " " + df_effectif['PRENOM'].astype(str)
             
             liste_agents = sorted(df_effectif['AGENT_LABEL'].dropna().unique().tolist())
-            
-            # Dictionnaire pour retrouver le nom simple à partir du label complet
             dict_agents = dict(zip(df_effectif['AGENT_LABEL'], df_effectif['NOM_SIMPLE']))
         else:
             liste_agents = []
@@ -122,12 +118,11 @@ try:
             with col1:
                 st.markdown(f"**{row['Agrès']}**")
             with col2:
-                st.markdown(`{row['Fonction']}`)
+                st.markdown(f"`{row['Fonction']}`")
             with col3:
                 agent_actuel = row['Personnel']
                 if liste_agents:
                     options = [""] + liste_agents
-                    # Recherche d'une correspondance par défaut
                     default_idx = 0
                     for i, opt in enumerate(options):
                         if agent_actuel.strip().lower() in opt.lower():
@@ -141,7 +136,6 @@ try:
                         label_visibility="collapsed",
                         key=f"agent_{idx}"
                     )
-                    # On convertit le choix en nom simple pour l'export si on veut garder la mise en page propre
                     nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
                 else:
                     nouveau_personnel = st.text_input(
