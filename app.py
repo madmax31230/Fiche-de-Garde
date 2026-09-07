@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# 1. Configuration de la page (Doit être la toute première instruction)
+# 1. Configuration de la page
 st.set_page_config(page_title="Feuille de Garde - L'Isle-en-Dodon", page_icon="🚒", layout="wide")
 
-# 2. Injection de CSS personnalisé (Design Sapeurs-Pompiers)
+# 2. Injection de CSS personnalisé
 st.markdown("""
     <style>
     .titre-caserne {
@@ -69,8 +69,8 @@ def charger_gabarit_excel(fichier):
 
 fichier_source = "TEST FEUILLE DE GARDE.xlsx"
 
-# --- EN-TÊTE DE L'APPLICATION ---
-st.markdown('<p class="titre-caserne">🚒 Centre de Secours X</p>', unsafe_allow_html=True)
+# En-tête
+st.markdown('<p class="titre-caserne">🚒 Centre de Secours de L\'Isle-en-Dodon</p>', unsafe_allow_html=True)
 st.markdown('<p class="sous-titre">Gestion opérationnelle de la feuille de garde</p>', unsafe_allow_html=True)
 
 try:
@@ -79,24 +79,8 @@ try:
     if df.empty:
         st.warning("Le tableau est vide. Vérifiez que l'onglet s'appelle bien 'BILLET'.")
     else:
-        # Calcul du personnel renseigné pour les statistiques
-        effectif_saisi = df['Personnel'].apply(lambda x: 1 if str(x).strip() != "" else 0).sum()
-        
-        # --- BARRE LATÉRALE (SIDEBAR) ---
-        with st.sidebar:
-            st.header("⚙️ Actions")
-            st.metric(label="Agents affectés", value=f"{effectif_saisi} / {len(df)}")
-            st.divider()
-            st.write("Vérifiez les affectations avant de générer le fichier Excel.")
-            
-            # Préparation de l'export
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # On écrit le tableau final, on peut l'appeler "Garde"
-                pass # Écrit plus bas après l'édition
-        
         # --- ZONE PRINCIPALE ---
-        st.write("### 📋 Affectation des équipages")
+        st.write("**📋 Affectation des équipages**")
         df_modifie = st.data_editor(
             df, 
             num_rows="dynamic", 
@@ -105,17 +89,27 @@ try:
             hide_index=True 
         )
         
-        # --- EXPORT (Suite) ---
+        # --- PRÉPARATION DU FICHIER EXCEL (Généré après l'édition) ---
+        output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_modifie.to_excel(writer, index=False, sheet_name='Garde')
+        
+        # --- BARRE LATÉRALE ---
+        effectif_saisi = df_modifie['Personnel'].apply(lambda x: 1 if str(x).strip() != "" and str(x).lower() != "nan" else 0).sum()
+        
+        with st.sidebar:
+            st.header("⚙️ Actions")
+            st.metric(label="Agents affectés", value=f"{effectif_saisi} / {len(df)}")
+            st.divider()
+            st.write("Vérifiez les affectations avant de générer le fichier Excel.")
             
-        st.sidebar.download_button(
-            label="📥 Télécharger la feuille validée", 
-            data=output.getvalue(), 
-            file_name="Feuille_Garde_Modifiee.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary" 
-        )
+            st.download_button(
+                label="📥 Télécharger la feuille validée", 
+                data=output.getvalue(), 
+                file_name="Feuille_Garde_Modifiee.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary" 
+            )
 
 except Exception as e:
     st.error(f"⚠️ Erreur de lecture du fichier Excel : {e}")
