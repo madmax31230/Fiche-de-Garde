@@ -34,20 +34,11 @@ st.markdown("""
         margin: 5px 0 0 0;
         opacity: 0.9;
     }
-    /* Conteneur style carte véhicule */
-    .vehicule-card {
-        background-color: #1a1c23;
-        border: 1px solid #333;
-        border-top: 4px solid #d32f2f;
-        padding: 12px;
-        border-radius: 6px;
-        margin-bottom: 15px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
-# Ton ID Google Sheets
-GOOGLE_SHEET_ID = "TON_ID_GOOGLE_SHEETS"
+# Ton ID Google Sheets extrait de ton lien
+GOOGLE_SHEET_ID = "1WbCH8Q4r2rM2WL1f8KP2o7XaADi-1vjC"
 
 @st.cache_data(ttl=60)
 def charger_donnees_depuis_gsheets(sheet_id):
@@ -84,12 +75,11 @@ def charger_donnees_depuis_gsheets(sheet_id):
                             personnel = p
                     donnees.append({"Agrès": agres_en_cours, "Fonction": valeur_maj, "Personnel": personnel})
                 elif not is_ignore and len(valeur_maj) >= 2 and not is_fonction:
-                    # C'est un nom d'agrès ou véhicule
                     agres_en_cours = valeur
                     
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'effectif depuis Google Sheets
+    # Chargement de l'effectif depuis Google Sheets avec toutes les spécialités
     liste_agents = []
     dict_agents = {}
     try:
@@ -145,12 +135,11 @@ try:
     df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
-        st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
+        st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets. Vérifiez que le lien est bien partagé en mode public ('Tous les utilisateurs ayant le lien').")
     else:
-        # Groupement par véhicule / agrès
         agres_uniques = df_garde['Agrès'].unique()
         
-        # Disposition en colonnes (grille de 3 colonnes pour une vue d'ensemble type feuille papier)
+        # Grille sur 3 colonnes pour afficher les véhicules côte à côte
         colonnes_affichage = st.columns(3)
         
         lignes_mises_a_jour = []
@@ -161,7 +150,6 @@ try:
             with col_cible:
                 st.markdown(f"### 🚚 {agres}")
                 
-                # Sous-tableau des postes pour cet engin
                 df_agres = df_garde[df_garde['Agrès'] == agres]
                 
                 for i, row in df_agres.iterrows():
@@ -193,7 +181,7 @@ try:
                     })
                 st.divider()
 
-        # Barre latérale pour l'export final
+        # Barre latérale pour l'exportation
         with st.sidebar:
             st.markdown("### 📥 Actions")
             output = BytesIO()
