@@ -2,34 +2,49 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.title("🚒 Feuille de Garde")
+# 1. Configuration de la page (Doit être la toute première instruction)
+st.set_page_config(page_title="Feuille de Garde - L'Isle-en-Dodon", page_icon="🚒", layout="wide")
+
+# 2. Injection de CSS personnalisé (Design Sapeurs-Pompiers)
+st.markdown("""
+    <style>
+    .titre-caserne {
+        color: #d32f2f;
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin-bottom: 0rem;
+        padding-bottom: 0rem;
+    }
+    .sous-titre {
+        color: #666;
+        font-size: 1.2rem;
+        font-style: italic;
+        margin-bottom: 2rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 @st.cache_data
 def charger_gabarit_excel(fichier):
     df_brut = pd.read_excel(fichier, sheet_name='BILLET', header=None)
     donnees = []
     fonctions_valides = ["CA", "COND", "EQ", "CE B1", "EQ B1", "CE B2", "EQ B2", "OBS", "COND/EQ"]
-    
     mots_ignores = ["BILLET", "DE", "GARDE", "EQUIPE", "LUNDI", "MARDI", "MERCREDI", 
                     "JEUDI", "VENDREDI", "SAMEDI", "DIMANCHE", "JANVIER", "FEVRIER", 
                     "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOUT", "SEPTEMBRE", 
                     "OCTOBRE", "NOVEMBRE", "DECEMBRE"]
     
-    # Lecture verticale : colonne par colonne
     for col_idx in range(df_brut.shape[1]):
         agres_en_cours = None
-        
         for row_idx in range(df_brut.shape[0]):
             valeur = str(df_brut.iloc[row_idx, col_idx]).strip()
             
-            # Ignorer les cellules vides
             if pd.isna(df_brut.iloc[row_idx, col_idx]) or valeur.lower() == "nan" or valeur == "":
                 continue
                 
             valeur_maj = valeur.upper()
-            
-            # Est-ce une fonction ?
             is_fonction = False
+            
             for f in fonctions_valides:
                 if valeur_maj == f:
                     is_fonction = True
@@ -40,16 +55,13 @@ def charger_gabarit_excel(fichier):
             
             if is_fonction:
                 if agres_en_cours:
-                    # Le personnel est cherché dans la cellule juste à droite
                     personnel = ""
                     if col_idx + 1 < df_brut.shape[1]:
                         p = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
                         if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
                             personnel = p
-                            
                     donnees.append({"Agrès": agres_en_cours, "Fonction": fonction_trouvee, "Personnel": personnel})
             
-            # Si ce n'est ni une fonction ni un mot ignoré, c'est un nouvel engin
             elif not is_ignore and len(valeur_maj) >= 2:
                 agres_en_cours = valeur
                 
@@ -57,24 +69,52 @@ def charger_gabarit_excel(fichier):
 
 fichier_source = "TEST FEUILLE DE GARDE.xlsx"
 
+# --- EN-TÊTE DE L'APPLICATION ---
+st.markdown('<p class="titre-caserne">🚒 Centre de Secours X</p>', unsafe_allow_html=True)
+st.markdown('<p class="sous-titre">Gestion opérationnelle de la feuille de garde</p>', unsafe_allow_html=True)
+
 try:
     df = charger_gabarit_excel(fichier_source)
     
     if df.empty:
-        st.warning("Le tableau est toujours vide. Vérifiez que l'onglet s'appelle bien 'BILLET'.")
+        st.warning("Le tableau est vide. Vérifiez que l'onglet s'appelle bien 'BILLET'.")
     else:
-        st.write("Affectation des équipages :")
-        df_modifie = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+        # Calcul du personnel renseigné pour les statistiques
+        effectif_saisi = df['Personnel'].apply(lambda x: 1 if str(x).strip() != "" else 0).sum()
         
-        output = BytesIO()
+        # --- BARRE LATÉRALE (SIDEBAR) ---
+        with st.sidebar:
+            st.header("⚙️ Actions")
+            st.metric(label="Agents affectés", value=f"{effectif_saisi} / {len(df)}")
+            st.divider()
+            st.write("Vérifiez les affectations avant de générer le fichier Excel.")
+            
+            # Préparation de l'export
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # On écrit le tableau final, on peut l'appeler "Garde"
+                pass # Écrit plus bas après l'édition
+        
+        # --- ZONE PRINCIPALE ---
+        st.write("### 📋 Affectation des équipages")
+        df_modifie = st.data_editor(
+            df, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            height=600,
+            hide_index=True 
+        )
+        
+        # --- EXPORT (Suite) ---
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_modifie.to_excel(writer, index=False, sheet_name='Garde')
-
-        st.download_button(
-            label="📥 Télécharger la feuille validée (Excel)", 
+            
+        st.sidebar.download_button(
+            label="📥 Télécharger la feuille validée", 
             data=output.getvalue(), 
-            file_name="Feuille Garde Modifiee.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_name="Feuille_Garde_Modifiee.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary" 
         )
 
 except Exception as e:
