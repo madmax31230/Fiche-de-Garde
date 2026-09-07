@@ -5,7 +5,7 @@ from io import BytesIO
 # 1. Configuration de la page
 st.set_page_config(page_title="Feuille de Garde - L'Isle-en-Dodon", page_icon="🚒", layout="wide")
 
-# 2. Injection de CSS personnalisé
+# 2. Styles CSS personnalisés
 st.markdown("""
     <style>
     .titre-caserne {
@@ -13,7 +13,6 @@ st.markdown("""
         font-size: 2.5rem;
         font-weight: 800;
         margin-bottom: 0rem;
-        padding-bottom: 0rem;
     }
     .sous-titre {
         color: #666;
@@ -25,7 +24,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data
-def charger_gabarit_excel(fichier):
+def charger_donnees_excel(fichier):
+    # Chargement du gabarit de garde depuis l'onglet 'BILLET'
     df_brut = pd.read_excel(fichier, sheet_name='BILLET', header=None)
     donnees = []
     fonctions_valides = ["CA", "COND", "EQ", "CE B1", "EQ B1", "CE B2", "EQ B2", "OBS", "COND/EQ"]
@@ -38,19 +38,15 @@ def charger_gabarit_excel(fichier):
         agres_en_cours = None
         for row_idx in range(df_brut.shape[0]):
             valeur = str(df_brut.iloc[row_idx, col_idx]).strip()
-            
             if pd.isna(df_brut.iloc[row_idx, col_idx]) or valeur.lower() == "nan" or valeur == "":
                 continue
-                
             valeur_maj = valeur.upper()
             is_fonction = False
-            
             for f in fonctions_valides:
                 if valeur_maj == f:
                     is_fonction = True
                     fonction_trouvee = f
                     break
-                    
             is_ignore = any(ignore in valeur_maj for ignore in mots_ignores)
             
             if is_fonction:
@@ -61,47 +57,69 @@ def charger_gabarit_excel(fichier):
                         if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
                             personnel = p
                     donnees.append({"Agrès": agres_en_cours, "Fonction": fonction_trouvee, "Personnel": personnel})
-            
             elif not is_ignore and len(valeur_maj) >= 2:
                 agres_en_cours = valeur
                 
-    return pd.DataFrame(donnees)
+    df_garde = pd.DataFrame(donnees)
+
+    # Chargement de l'onglet des véhicules s'il existe
+    try:
+        df_vehicules = pd.read_excel(fichier, sheet_name='VEHICULES')
+    except Exception:
+        # Valeurs par défaut si l'onglet n'est pas encore créé
+        df_vehicules = pd.DataFrame(columns=["ENERGIE/TYPE", "NUMERO"])
+
+    return df_garde, df_vehicules
 
 fichier_source = "TEST FEUILLE DE GARDE.xlsx"
 
-# En-tête
+# En-tête de l'application
 st.markdown('<p class="titre-caserne">🚒 Centre de Secours de L\'Isle-en-Dodon</p>', unsafe_allow_html=True)
-st.markdown('<p class="sous-titre">Gestion opérationnelle de la feuille de garde</p>', unsafe_allow_html=True)
+st.markdown('<p class="sous-titre">Gestion opérationnelle des gardes et des véhicules</p>', unsafe_allow_html=True)
 
 try:
-    df = charger_gabarit_excel(fichier_source)
+    df_garde, df_vehicules = charger_donnees_excel(fichier_source)
     
-    if df.empty:
-        st.warning("Le tableau est vide. Vérifiez que l'onglet s'appelle bien 'BILLET'.")
+    if df_garde.empty:
+        st.warning("Le tableau de garde est vide. Vérifiez l'onglet 'BILLET'.")
     else:
-        # --- ZONE PRINCIPALE ---
-        st.write("**📋 Affectation des équipages**")
-        df_modifie = st.data_editor(
-            df, 
-            num_rows="dynamic", 
-            use_container_width=True,
-            height=600,
-            hide_index=True 
-        )
+        # Disposition en deux colonnes sur l'écran
+        col_garde, col_vehicules = st.columns([2, 1])
         
-        # --- PRÉPARATION DU FICHIER EXCEL (Généré après l'édition) ---
+        with col_garde:
+            st.write("**📋 Affectation des équipages**")
+            df_garde_modifie = st.data_editor(
+                df_garde, 
+                num_rows="dynamic", 
+                use_container_width=True,
+                height=550,
+                hide_index=True 
+            )
+            
+        with col_vehicules:
+            st.write("**🚛 Gestion des Numéros de Véhicules**")
+            df_vehicules_modifie = st.data_editor(
+                df_vehicules, 
+                num_rows="dynamic", 
+                use_container_width=True,
+                height=550,
+                hide_index=True 
+            )
+
+        # --- PRÉPARATION DU FICHIER EXCEL DE SORTIE ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_modifie.to_excel(writer, index=False, sheet_name='Garde')
+            df_garde_modifie.to_excel(writer, index=False, sheet_name='Garde')
+            df_vehicules_modifie.to_excel(writer, index=False, sheet_name='VEHICULES')
         
-        # --- BARRE LATÉRALE ---
-        effectif_saisi = df_modifie['Personnel'].apply(lambda x: 1 if str(x).strip() != "" and str(x).lower() != "nan" else 0).sum()
+        # --- BARRE LATÉRALE (SIDEBAR) ---
+        effectif_saisi = df_garde_modifie['Personnel'].apply(lambda x: 1 if str(x).strip() != "" and str(x).lower() != "nan" else 0).sum()
         
         with st.sidebar:
             st.header("⚙️ Actions")
-            st.metric(label="Agents affectés", value=f"{effectif_saisi} / {len(df)}")
+            st.metric(label="Postes pourvus", value=f"{effectif_saisi} / {len(df_garde)}")
             st.divider()
-            st.write("Vérifiez les affectations avant de générer le fichier Excel.")
+            st.write("Vérifiez les modifications avant l'exportation.")
             
             st.download_button(
                 label="📥 Télécharger la feuille validée", 
@@ -112,4 +130,4 @@ try:
             )
 
 except Exception as e:
-    st.error(f"⚠️ Erreur de lecture du fichier Excel : {e}")
+    st.error(f"⚠️ Erreur : {e}")
