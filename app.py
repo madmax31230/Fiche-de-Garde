@@ -70,7 +70,8 @@ def charger_donnees_excel(fichier):
 
     return df_garde, df_vehicules
 
-fichier_source = "TEST FEUILLE DE GARDE.xlsx"
+# Utilisation du nom de fichier propre sans espace
+fichier_source = "feuille_garde.xlsx"
 
 # En-tête de l'application
 st.markdown('<p class="titre-caserne">🚒 Centre de Secours de L\'Isle-en-Dodon</p>', unsafe_allow_html=True)
