@@ -65,7 +65,6 @@ def charger_donnees(fichier):
     # Chargement de l'effectif pour les listes déroulantes
     try:
         df_effectif = pd.read_excel(fichier, sheet_name='EFFECTIF')
-        # On crée une colonne Nom complet propre (ex: Dupont Jean)
         if 'NOM' in df_effectif.columns and 'PRENOM' in df_effectif.columns:
             df_effectif['AGENT'] = df_effectif['NOM'].astype(str) + " " + df_effectif['PRENOM'].astype(str)
             liste_agents = sorted(df_effectif['AGENT'].dropna().unique().tolist())
@@ -90,10 +89,8 @@ try:
     else:
         st.write("### 📋 Équipe de garde du jour (Modifiable)")
         
-        # On prépare une interface claire pour modifier les agents via des listes déroulantes
         lignes_mises_a_jour = []
         
-        # Pour chaque poste, on propose un affichage en ligne propre avec un selectbox si des agents sont dispos
         for idx, row in df_garde.iterrows():
             col1, col2, col3 = st.columns([1.5, 1, 2.5])
             with col1:
@@ -102,11 +99,10 @@ try:
                 st.markdown(f"`{row['Fonction']}`")
             with col3:
                 agent_actuel = row['Personnel']
-                # Si la liste d'effectif existe, on propose un selectbox, sinon un champ texte
                 if liste_agents:
                     options = [""] + liste_agents
                     default_idx = options.index(agent_actuel) if agent_actuel in options else 0
-                    nouveau_ PERSONNEL = st.selectbox(
+                    nouveau_personnel = st.selectbox(
                         f"Agent {idx}", 
                         options=options, 
                         index=default_idx, 
@@ -114,7 +110,7 @@ try:
                         key=f"agent_{idx}"
                     )
                 else:
-                    nouveau_ PERSONNEL = st.text_input(
+                    nouveau_personnel = st.text_input(
                         f"Agent {idx}", 
                         value=agent_actuel, 
                         label_visibility="collapsed",
@@ -124,7 +120,7 @@ try:
             lignes_mises_a_jour.append({
                 "Agrès": row['Agrès'],
                 "Fonction": row['Fonction'],
-                "Personnel": nouveau__ PERSONNEL if 'nouveau__ PERSONNEL' in locals() else nouveau_ PERSONNEL
+                "Personnel": nouveau_personnel
             })
 
         df_final = pd.DataFrame(lignes_mises_a_jour)
