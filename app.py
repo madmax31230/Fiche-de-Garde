@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# 1. Configuration de la page
+# 1. Configuration de la page en mode large
 st.set_page_config(page_title="Feuille de Garde - L'Isle-en-Dodon", page_icon="🚒", layout="wide")
 
 # 2. Styles CSS personnalisés
@@ -10,15 +10,15 @@ st.markdown("""
     <style>
     .titre-caserne {
         color: #d32f2f;
-        font-size: 2.5rem;
+        font-size: 2.2rem;
         font-weight: 800;
         margin-bottom: 0rem;
     }
     .sous-titre {
         color: #666;
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         font-style: italic;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -62,12 +62,11 @@ def charger_donnees_excel(fichier):
                 
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'onglet des véhicules s'il existe
+    # Chargement de l'onglet des véhicules
     try:
-        df_vehicules = pd.read_excel(fichier, sheet_name='VEHICULES')
+        df_vehicules = pd.read_excel(fichier, sheet_name='VEHICULE')
     except Exception:
-        # Valeurs par défaut si l'onglet n'est pas encore créé
-        df_vehicules = pd.DataFrame(columns=["ENERGIE/TYPE", "NUMERO"])
+        df_vehicules = pd.DataFrame(columns=["ENGIN", "NUMERO"])
 
     return df_garde, df_vehicules
 
@@ -75,7 +74,7 @@ fichier_source = "TEST FEUILLE DE GARDE.xlsx"
 
 # En-tête de l'application
 st.markdown('<p class="titre-caserne">🚒 Centre de Secours de L\'Isle-en-Dodon</p>', unsafe_allow_html=True)
-st.markdown('<p class="sous-titre">Gestion opérationnelle des gardes et des véhicules</p>', unsafe_allow_html=True)
+st.markdown('<p class="sous-titre">Gestion opérationnelle des gardes</p>', unsafe_allow_html=True)
 
 try:
     df_garde, df_vehicules = charger_donnees_excel(fichier_source)
@@ -83,43 +82,62 @@ try:
     if df_garde.empty:
         st.warning("Le tableau de garde est vide. Vérifiez l'onglet 'BILLET'.")
     else:
-        # Disposition en deux colonnes sur l'écran
-        col_garde, col_vehicules = st.columns([2, 1])
-        
-        with col_garde:
-            st.write("**📋 Affectation des équipages**")
-            df_garde_modifie = st.data_editor(
-                df_garde, 
-                num_rows="dynamic", 
-                use_container_width=True,
-                height=550,
-                hide_index=True 
-            )
-            
-        with col_vehicules:
-            st.write("**🚛 Gestion des Numéros de Véhicules**")
-            df_vehicules_modifie = st.data_editor(
-                df_vehicules, 
-                num_rows="dynamic", 
-                use_container_width=True,
-                height=550,
-                hide_index=True 
-            )
+        # --- TABLEAU PRINCIPAL EN PLEINE LARGEUR ---
+        st.write("**📋 Affectation des équipages**")
+        df_garde_modifie = st.data_editor(
+            df_garde, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            height=600,
+            hide_index=True 
+        )
 
-        # --- PRÉPARATION DU FICHIER EXCEL DE SORTIE ---
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_garde_modifie.to_excel(writer, index=False, sheet_name='Garde')
-            df_vehicules_modifie.to_excel(writer, index=False, sheet_name='VEHICULES')
+        # Nettoyage de la table véhicules pour les listes déroulantes
+        df_veh_clean = df_vehicules.dropna(subset=['ENGIN']).copy()
+        liste_engins = df_veh_clean['ENGIN'].tolist()
         
-        # --- BARRE LATÉRALE (SIDEBAR) ---
+        # Liste complète des numéros disponibles (de 1 à 99 par exemple)
+        # On extrait tous les chiffres valides présents dans la colonne NUMERO
+        tous_les_numeros = [str(int(n)) for n in df_vehicules['NUMERO'].dropna() if str(n).replace('.','',1).isdigit()]
+        if not tous_les_numeros:
+            tous_les_numeros = [str(i) for i in range(1, 100)]
+
+        # --- BARRE LATÉRALE (SIDEBAR) AVEC LISTES DÉROULANTES ---
         effectif_saisi = df_garde_modifie['Personnel'].apply(lambda x: 1 if str(x).strip() != "" and str(x).lower() != "nan" else 0).sum()
         
         with st.sidebar:
             st.header("⚙️ Actions")
             st.metric(label="Postes pourvus", value=f"{effectif_saisi} / {len(df_garde)}")
             st.divider()
-            st.write("Vérifiez les modifications avant l'exportation.")
+            
+            with st.expander("🚛 Assigner les numéros de véhicules"):
+                nouveaux_vehicules = []
+                # On parcourt chaque engin officiel pour lui attribuer un sélecteur (selectbox)
+                for idx, row in df_veh_clean.iterrows():
+                    engin_nom = row['ENGIN']
+                    ancien_num = str(row['NUMERO']) if pd.notna(row['NUMERO']) else tous_les_numeros[0]
+                    
+                    # Si l'ancien numéro n'est pas dans la liste, on le met par défaut
+                    if ancien_num not in tous_les_numeros:
+                        tous_les_numeros.insert(0, ancien_num)
+                        
+                    index_defaut = tous_les_numeros.index(ancien_num) if ancien_num in tous_les_numeros else 0
+                    
+                    # Création de la liste déroulante pour chaque engin
+                    choix_num = st.selectbox(f"Indicatif {engin_nom}", tous_les_numeros, index=index_defaut, key=f"veh_{engin_nom}_{idx}")
+                    nouveaux_vehicules.append({"ENGIN": engin_nom, "NUMERO": choix_num})
+                
+                df_vehicules_modifie = pd.DataFrame(nouveaux_vehicules)
+            else:
+                df_vehicules_modifie = df_vehicules
+
+            st.divider()
+            
+            # --- PRÉPARATION DU FICHIER EXCEL DE SORTIE ---
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_garde_modifie.to_excel(writer, index=False, sheet_name='Garde')
+                df_vehicules_modifie.to_excel(writer, index=False, sheet_name='VEHICULE')
             
             st.download_button(
                 label="📥 Télécharger la feuille validée", 
