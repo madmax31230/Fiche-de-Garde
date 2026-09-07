@@ -62,53 +62,87 @@ def charger_donnees(fichier):
                 
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'effectif pour les listes déroulantes
+    # Chargement de l'effectif et de ses spécialités pour les listes déroulantes
     try:
         df_effectif = pd.read_excel(fichier, sheet_name='EFFECTIF')
         if 'NOM' in df_effectif.columns and 'PRENOM' in df_effectif.columns:
-            df_effectif['AGENT'] = df_effectif['NOM'].astype(str) + " " + df_effectif['PRENOM'].astype(str)
-            liste_agents = sorted(df_effectif['AGENT'].dropna().unique().tolist())
+            # On combine Nom, Prénom et Spécialité/Grade si disponibles
+            def formater_agent(row):
+                nom = str(row.get('NOM', '')).strip()
+                prenom = str(row.get('PRENOM', '')).strip()
+                grade = str(row.get('GRADE', '')).strip()
+                spec = str(row.get('SPECIALITE', '')).strip()
+                
+                base = f"{nom} {prenom}"
+                details = []
+                if grade and grade.lower() != 'nan':
+                    details.append(grade)
+                if spec and spec.lower() != 'nan':
+                    details.append(spec)
+                
+                if details:
+                    return f"{base} ({' - '.join(details)})"
+                return base
+
+            df_effectif['AGENT_LABEL'] = df_effectif.apply(formater_agent, axis=1)
+            # On garde aussi une correspondance pour extraire juste le nom si besoin lors de l'export
+            df_effectif['NOM_SIMPLE'] = df_effectif['NOM'].astype(str) + " " + df_effectif['PRENOM'].astype(str)
+            
+            liste_agents = sorted(df_effectif['AGENT_LABEL'].dropna().unique().tolist())
+            
+            # Dictionnaire pour retrouver le nom simple à partir du label complet
+            dict_agents = dict(zip(df_effectif['AGENT_LABEL'], df_effectif['NOM_SIMPLE']))
         else:
             liste_agents = []
+            dict_agents = {}
     except Exception:
         liste_agents = []
+        dict_agents = {}
 
-    return df_garde, liste_agents
+    return df_garde, liste_agents, dict_agents
 
 fichier_source = "feuille_garde.xlsx"
 
 # En-tête
 st.markdown('<p class="titre-caserne">🚒 Centre de Secours de L\'Isle-en-Dodon</p>', unsafe_allow_html=True)
-st.markdown('<p class="sous-titre">Gestion opérationnelle de l\'équipe de garde</p>', unsafe_allow_html=True)
+st.markdown('<p class="sous-titre">Gestion opérationnelle avec suivi des compétences</p>', unsafe_allow_html=True)
 
 try:
-    df_garde, liste_agents = charger_donnees(fichier_source)
+    df_garde, liste_agents, dict_agents = charger_donnees(fichier_source)
     
     if df_garde.empty:
         st.warning("Le tableau de garde est vide. Vérifiez l'onglet 'BILLET'.")
     else:
-        st.write("### 📋 Équipe de garde du jour (Modifiable)")
+        st.write("### 📋 Équipe de garde du jour (Modifiable avec compétences)")
         
         lignes_mises_a_jour = []
         
         for idx, row in df_garde.iterrows():
-            col1, col2, col3 = st.columns([1.5, 1, 2.5])
+            col1, col2, col3 = st.columns([1.5, 1, 3])
             with col1:
                 st.markdown(f"**{row['Agrès']}**")
             with col2:
-                st.markdown(f"`{row['Fonction']}`")
+                st.markdown(`{row['Fonction']}`)
             with col3:
                 agent_actuel = row['Personnel']
                 if liste_agents:
                     options = [""] + liste_agents
-                    default_idx = options.index(agent_actuel) if agent_actuel in options else 0
-                    nouveau_personnel = st.selectbox(
+                    # Recherche d'une correspondance par défaut
+                    default_idx = 0
+                    for i, opt in enumerate(options):
+                        if agent_actuel.strip().lower() in opt.lower():
+                            default_idx = i
+                            break
+                            
+                    choix_label = st.selectbox(
                         f"Agent {idx}", 
                         options=options, 
                         index=default_idx, 
                         label_visibility="collapsed",
                         key=f"agent_{idx}"
                     )
+                    # On convertit le choix en nom simple pour l'export si on veut garder la mise en page propre
+                    nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
                 else:
                     nouveau_personnel = st.text_input(
                         f"Agent {idx}", 
