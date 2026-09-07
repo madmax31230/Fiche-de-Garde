@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# 1. Configuration de la page en mode large
+# 1. Configuration de la page
 st.set_page_config(page_title="Feuille de Garde - L'Isle-en-Dodon", page_icon="🚒", layout="wide")
 
-# 2. Styles CSS personnalisés
+# 2. Design et styles
 st.markdown("""
     <style>
     .titre-caserne {
@@ -24,8 +24,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data
-def charger_donnees_excel(fichier):
-    # Chargement du gabarit de garde depuis l'onglet 'BILLET'
+def charger_donnees(fichier):
+    # Chargement de la garde (onglet BILLET)
     df_brut = pd.read_excel(fichier, sheet_name='BILLET', header=None)
     donnees = []
     fonctions_valides = ["CA", "COND", "EQ", "CE B1", "EQ B1", "CE B2", "EQ B2", "OBS", "COND/EQ"]
@@ -62,83 +62,87 @@ def charger_donnees_excel(fichier):
                 
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'onglet des véhicules
+    # Chargement de l'effectif pour les listes déroulantes
     try:
-        df_vehicules = pd.read_excel(fichier, sheet_name='VEHICULE')
+        df_effectif = pd.read_excel(fichier, sheet_name='EFFECTIF')
+        # On crée une colonne Nom complet propre (ex: Dupont Jean)
+        if 'NOM' in df_effectif.columns and 'PRENOM' in df_effectif.columns:
+            df_effectif['AGENT'] = df_effectif['NOM'].astype(str) + " " + df_effectif['PRENOM'].astype(str)
+            liste_agents = sorted(df_effectif['AGENT'].dropna().unique().tolist())
+        else:
+            liste_agents = []
     except Exception:
-        df_vehicules = pd.DataFrame(columns=["ENGIN", "NUMERO"])
+        liste_agents = []
 
-    return df_garde, df_vehicules
+    return df_garde, liste_agents
 
-# Utilisation du nom de fichier propre sans espace
 fichier_source = "feuille_garde.xlsx"
 
-# En-tête de l'application
+# En-tête
 st.markdown('<p class="titre-caserne">🚒 Centre de Secours de L\'Isle-en-Dodon</p>', unsafe_allow_html=True)
-st.markdown('<p class="sous-titre">Gestion opérationnelle des gardes</p>', unsafe_allow_html=True)
+st.markdown('<p class="sous-titre">Gestion opérationnelle de l\'équipe de garde</p>', unsafe_allow_html=True)
 
 try:
-    df_garde, df_vehicules = charger_donnees_excel(fichier_source)
+    df_garde, liste_agents = charger_donnees(fichier_source)
     
     if df_garde.empty:
         st.warning("Le tableau de garde est vide. Vérifiez l'onglet 'BILLET'.")
     else:
-        # --- TABLEAU PRINCIPAL EN PLEINE LARGEUR ---
-        st.write("**📋 Affectation des équipages**")
-        df_garde_modifie = st.data_editor(
-            df_garde, 
-            num_rows="dynamic", 
-            use_container_width=True,
-            height=600,
-            hide_index=True 
-        )
-
-        # Nettoyage de la table véhicules pour les listes déroulantes
-        df_veh_clean = df_vehicules.dropna(subset=['ENGIN']).copy()
+        st.write("### 📋 Équipe de garde du jour (Modifiable)")
         
-        # Liste complète des numéros disponibles
-        tous_les_numeros = [str(int(n)) for n in df_vehicules['NUMERO'].dropna() if str(n).replace('.','',1).isdigit()]
-        if not tous_les_numeros:
-            tous_les_numeros = [str(i) for i in range(1, 100)]
-
-        # --- BARRE LATÉRALE (SIDEBAR) AVEC LISTES DÉROULANTES ---
-        effectif_saisi = df_garde_modifie['Personnel'].apply(lambda x: 1 if str(x).strip() != "" and str(x).lower() != "nan" else 0).sum()
+        # On prépare une interface claire pour modifier les agents via des listes déroulantes
+        lignes_mises_a_jour = []
         
-        with st.sidebar:
-            st.header("⚙️ Actions")
-            st.metric(label="Postes pourvus", value=f"{effectif_saisi} / {len(df_garde)}")
-            st.divider()
+        # Pour chaque poste, on propose un affichage en ligne propre avec un selectbox si des agents sont dispos
+        for idx, row in df_garde.iterrows():
+            col1, col2, col3 = st.columns([1.5, 1, 2.5])
+            with col1:
+                st.markdown(f"**{row['Agrès']}**")
+            with col2:
+                st.markdown(f"`{row['Fonction']}`")
+            with col3:
+                agent_actuel = row['Personnel']
+                # Si la liste d'effectif existe, on propose un selectbox, sinon un champ texte
+                if liste_agents:
+                    options = [""] + liste_agents
+                    default_idx = options.index(agent_actuel) if agent_actuel in options else 0
+                    nouveau_ PERSONNEL = st.selectbox(
+                        f"Agent {idx}", 
+                        options=options, 
+                        index=default_idx, 
+                        label_visibility="collapsed",
+                        key=f"agent_{idx}"
+                    )
+                else:
+                    nouveau_ PERSONNEL = st.text_input(
+                        f"Agent {idx}", 
+                        value=agent_actuel, 
+                        label_visibility="collapsed",
+                        key=f"text_agent_{idx}"
+                    )
             
-            with st.expander("🚛 Assigner les numéros de véhicules"):
-                nouveaux_vehicules = []
-                for idx, row in df_veh_clean.iterrows():
-                    engin_nom = row['ENGIN']
-                    ancien_num = str(int(row['NUMERO'])) if pd.notna(row['NUMERO']) and str(row['NUMERO']).replace('.','',1).isdigit() else tous_les_numeros[0]
-                    
-                    if ancien_num not in tous_les_numeros:
-                        tous_les_numeros.insert(0, ancien_num)
-                        
-                    index_defaut = tous_les_numeros.index(ancien_num) if ancien_num in tous_les_numeros else 0
-                    
-                    choix_num = st.selectbox(f"Indicatif {engin_nom}", tous_les_numeros, index=index_defaut, key=f"veh_{engin_nom}_{idx}")
-                    nouveaux_vehicules.append({"ENGIN": engin_nom, "NUMERO": choix_num})
-                
-                df_vehicules_modifie = pd.DataFrame(nouveaux_vehicules)
+            lignes_mises_a_jour.append({
+                "Agrès": row['Agrès'],
+                "Fonction": row['Fonction'],
+                "Personnel": nouveau__ PERSONNEL if 'nouveau__ PERSONNEL' in locals() else nouveau_ PERSONNEL
+            })
 
-            st.divider()
-            
-            # --- PRÉPARATION DU FICHIER EXCEL DE SORTIE ---
+        df_final = pd.DataFrame(lignes_mises_a_jour)
+
+        # --- EXPORT ET ACTIONS ---
+        st.divider()
+        col_g, col_d = st.columns([2, 1])
+        with col_d:
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_garde_modifie.to_excel(writer, index=False, sheet_name='Garde')
-                df_vehicules_modifie.to_excel(writer, index=False, sheet_name='VEHICULE')
+                df_final.to_excel(writer, index=False, sheet_name='Garde')
             
             st.download_button(
-                label="📥 Télécharger la feuille validée", 
+                label="📥 Télécharger la feuille validée (Excel)", 
                 data=output.getvalue(), 
-                file_name="Feuille_Garde_Modifiee.xlsx",
+                file_name="Feuille_Garde_Mise_A_Jour.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary" 
+                type="primary"
             )
 
 except Exception as e:
