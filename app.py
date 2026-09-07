@@ -94,10 +94,8 @@ try:
 
         # Nettoyage de la table véhicules pour les listes déroulantes
         df_veh_clean = df_vehicules.dropna(subset=['ENGIN']).copy()
-        liste_engins = df_veh_clean['ENGIN'].tolist()
         
-        # Liste complète des numéros disponibles (de 1 à 99 par exemple)
-        # On extrait tous les chiffres valides présents dans la colonne NUMERO
+        # Liste complète des numéros disponibles
         tous_les_numeros = [str(int(n)) for n in df_vehicules['NUMERO'].dropna() if str(n).replace('.','',1).isdigit()]
         if not tous_les_numeros:
             tous_les_numeros = [str(i) for i in range(1, 100)]
@@ -112,24 +110,19 @@ try:
             
             with st.expander("🚛 Assigner les numéros de véhicules"):
                 nouveaux_vehicules = []
-                # On parcourt chaque engin officiel pour lui attribuer un sélecteur (selectbox)
                 for idx, row in df_veh_clean.iterrows():
                     engin_nom = row['ENGIN']
-                    ancien_num = str(row['NUMERO']) if pd.notna(row['NUMERO']) else tous_les_numeros[0]
+                    ancien_num = str(int(row['NUMERO'])) if pd.notna(row['NUMERO']) and str(row['NUMERO']).replace('.','',1).isdigit() else tous_les_numeros[0]
                     
-                    # Si l'ancien numéro n'est pas dans la liste, on le met par défaut
                     if ancien_num not in tous_les_numeros:
                         tous_les_numeros.insert(0, ancien_num)
                         
                     index_defaut = tous_les_numeros.index(ancien_num) if ancien_num in tous_les_numeros else 0
                     
-                    # Création de la liste déroulante pour chaque engin
                     choix_num = st.selectbox(f"Indicatif {engin_nom}", tous_les_numeros, index=index_defaut, key=f"veh_{engin_nom}_{idx}")
                     nouveaux_vehicules.append({"ENGIN": engin_nom, "NUMERO": choix_num})
                 
                 df_vehicules_modifie = pd.DataFrame(nouveaux_vehicules)
-            else:
-                df_vehicules_modifie = df_vehicules
 
             st.divider()
             
