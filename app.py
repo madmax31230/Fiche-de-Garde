@@ -62,36 +62,48 @@ def charger_donnees(fichier):
                 
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'effectif et de ses spécialités pour les listes déroulantes
+    # Chargement de l'effectif avec récupération de TOUTES les colonnes de spécialités
     try:
-        df_effectif = pd.read_excel(fichier, sheet_name='EFFECTIF')
-        if 'NOM' in df_effectif.columns and 'PRENOM' in df_effectif.columns:
-            def formater_agent(row):
-                nom = str(row.get('NOM', '')).strip()
-                prenom = str(row.get('PRENOM', '')).strip()
-                grade = str(row.get('GRADE', '')).strip()
-                spec = str(row.get('SPECIALITE', '')).strip()
-                
-                base = f"{nom} {prenom}"
-                details = []
-                if grade and grade.lower() != 'nan':
-                    details.append(grade)
-                if spec and spec.lower() != 'nan':
-                    details.append(spec)
-                
-                if details:
-                    return f"{base} ({' - '.join(details)})"
-                return base
-
-            df_effectif['AGENT_LABEL'] = df_effectif.apply(formater_agent, axis=1)
-            df_effectif['NOM_SIMPLE'] = df_effectif['NOM'].astype(str) + " " + df_effectif['PRENOM'].astype(str)
+        df_eff_brut = pd.read_excel(fichier, sheet_name='EFFECTIF', header=None)
+        
+        # Ligne 0 = En-têtes, on prend à partir de la ligne 1
+        liste_agents = []
+        dict_agents = {}
+        
+        for r in range(1, len(df_eff_brut)):
+            row = df_eff_brut.iloc[r]
+            nom = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
+            prenom = str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ""
+            grade = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ""
             
-            liste_agents = sorted(df_effectif['AGENT_LABEL'].dropna().unique().tolist())
-            dict_agents = dict(zip(df_effectif['AGENT_LABEL'], df_effectif['NOM_SIMPLE']))
-        else:
-            liste_agents = []
-            dict_agents = {}
-    except Exception:
+            if not nom or nom.lower() == "nan":
+                continue
+                
+            nom_simple = f"{nom} {prenom}"
+            
+            # Récupération de toutes les spécialités de la ligne (colonnes F / index 5 et suivantes)
+            specs = []
+            for c in range(5, len(row)):
+                val = row.iloc[c]
+                if pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan":
+                    specs.append(str(val).strip())
+            
+            details = []
+            if grade and grade.lower() != 'nan':
+                details.append(grade)
+            if specs:
+                details.extend(specs)
+                
+            if details:
+                label = f"{nom_simple} ({' - '.join(details)})"
+            else:
+                label = nom_simple
+                
+            liste_agents.append(label)
+            dict_agents[label] = nom_simple
+            
+        liste_agents = sorted(list(set(liste_agents)))
+    except Exception as e:
         liste_agents = []
         dict_agents = {}
 
