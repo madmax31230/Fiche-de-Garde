@@ -23,10 +23,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data
-def charger_donnees(fichier):
-    # Chargement de la garde (onglet BILLET)
-    df_brut = pd.read_excel(fichier, sheet_name='BILLET', header=None)
+# Ton ID Google Sheets (récupéré depuis l'URL de ton tableur en ligne)
+GOOGLE_SHEET_ID = "1WbCH8Q4r2rM2WL1f8KP2o7XaADi-1vjC"
+
+@st.cache_data(ttl=60) # Actualisation automatique toutes les minutes
+def charger_donnees_depuis_gsheets(sheet_id):
+    try:
+        url_billet = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=BILLET"
+        df_brut = pd.read_csv(url_billet, header=None)
+    except Exception:
+        df_brut = pd.DataFrame()
+
     donnees = []
     fonctions_valides = ["CA", "COND", "EQ", "CE B1", "EQ B1", "CE B2", "EQ B2", "OBS", "COND/EQ"]
     mots_ignores = ["BILLET", "DE", "GARDE", "EQUIPE", "LUNDI", "MARDI", "MERCREDI", 
@@ -34,41 +41,41 @@ def charger_donnees(fichier):
                     "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOUT", "SEPTEMBRE", 
                     "OCTOBRE", "NOVEMBRE", "DECEMBRE"]
     
-    for col_idx in range(df_brut.shape[1]):
-        agres_en_cours = None
-        for row_idx in range(df_brut.shape[0]):
-            valeur = str(df_brut.iloc[row_idx, col_idx]).strip()
-            if pd.isna(df_brut.iloc[row_idx, col_idx]) or valeur.lower() == "nan" or valeur == "":
-                continue
-            valeur_maj = valeur.upper()
-            is_fonction = False
-            for f in fonctions_valides:
-                if valeur_maj == f:
-                    is_fonction = True
-                    fonction_trouvee = f
-                    break
-            is_ignore = any(ignore in valeur_maj for ignore in mots_ignores)
-            
-            if is_fonction:
-                if agres_en_cours:
-                    personnel = ""
-                    if col_idx + 1 < df_brut.shape[1]:
-                        p = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
-                        if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
-                            personnel = p
-                    donnees.append({"Agrès": agres_en_cours, "Fonction": fonction_trouvee, "Personnel": personnel})
-            elif not is_ignore and len(valeur_maj) >= 2:
-                agres_en_cours = valeur
+    if not df_brut.empty:
+        for col_idx in range(df_brut.shape[1]):
+            agres_en_cours = None
+            for row_idx in range(df_brut.shape[0]):
+                valeur = str(df_brut.iloc[row_idx, col_idx]).strip()
+                if pd.isna(df_brut.iloc[row_idx, col_idx]) or valeur.lower() == "nan" or valeur == "":
+                    continue
+                valeur_maj = valeur.upper()
+                is_fonction = False
+                for f in fonctions_valides:
+                    if valeur_maj == f:
+                        is_fonction = True
+                        fonction_trouvee = f
+                        break
+                is_ignore = any(ignore in valeur_maj for ignore in mots_ignores)
                 
+                if is_fonction:
+                    if agres_en_cours:
+                        personnel = ""
+                        if col_idx + 1 < df_brut.shape[1]:
+                            p = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
+                            if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
+                                personnel = p
+                        donnees.append({"Agrès": agres_en_cours, "Fonction": fonction_trouvee, "Personnel": personnel})
+                elif not is_ignore and len(valeur_maj) >= 2:
+                    agres_en_cours = valeur
+                    
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'effectif avec récupération de TOUTES les colonnes de spécialités
+    # Chargement de l'effectif directement depuis Google Sheets
+    liste_agents = []
+    dict_agents = {}
     try:
-        df_eff_brut = pd.read_excel(fichier, sheet_name='EFFECTIF', header=None)
-        
-        # Ligne 0 = En-têtes, on prend à partir de la ligne 1
-        liste_agents = []
-        dict_agents = {}
+        url_effectif = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=EFFECTIF"
+        df_eff_brut = pd.read_csv(url_effectif, header=None)
         
         for r in range(1, len(df_eff_brut)):
             row = df_eff_brut.iloc[r]
@@ -81,7 +88,7 @@ def charger_donnees(fichier):
                 
             nom_simple = f"{nom} {prenom}"
             
-            # Récupération de toutes les spécialités de la ligne (colonnes F / index 5 et suivantes)
+            # Récupération de toutes les spécialités (colonnes F / index 5 et suivantes)
             specs = []
             for c in range(5, len(row)):
                 val = row.iloc[c]
@@ -103,25 +110,22 @@ def charger_donnees(fichier):
             dict_agents[label] = nom_simple
             
         liste_agents = sorted(list(set(liste_agents)))
-    except Exception as e:
-        liste_agents = []
-        dict_agents = {}
+    except Exception:
+        pass
 
     return df_garde, liste_agents, dict_agents
 
-fichier_source = "feuille_garde.xlsx"
-
 # En-tête
 st.markdown('<p class="titre-caserne">🚒 Centre de Secours de L\'Isle-en-Dodon</p>', unsafe_allow_html=True)
-st.markdown('<p class="sous-titre">Gestion opérationnelle avec suivi des compétences</p>', unsafe_allow_html=True)
+st.markdown('<p class="sous-titre">Synchronisation en direct avec Google Sheets</p>', unsafe_allow_html=True)
 
 try:
-    df_garde, liste_agents, dict_agents = charger_donnees(fichier_source)
+    df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
-        st.warning("Le tableau de garde est vide. Vérifiez l'onglet 'BILLET'.")
+        st.warning("Impossible de lire l'onglet 'BILLET' de votre Google Sheets. Vérifiez que le tableur est bien partagé ('Accès général : Tous les utilisateurs ayant le lien').")
     else:
-        st.write("### 📋 Équipe de garde du jour (Modifiable avec compétences)")
+        st.write("### 📋 Équipe de garde du jour (Modifiable en temps réel)")
         
         lignes_mises_a_jour = []
         
@@ -182,4 +186,4 @@ try:
             )
 
 except Exception as e:
-    st.error(f"⚠️ Erreur : {e}")
+    st.error(f"⚠️ Erreur de connexion au Google Sheets : {e}")
