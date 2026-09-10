@@ -140,7 +140,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
 # En-tête visuel
 st.markdown("""
     <div class="header-box">
-        <p class="header-title">🚒 CENTRE DE SECOURS DE L'ISLE-EN-DODON</p>
+        <p class="header-title">🚒 CENTRE DE SECOURS DE X</p>
         <p class="header-subtitle">Feuille de Garde - Visualisation distincte par Engin</p>
     </div>
 """, unsafe_allow_html=True)
