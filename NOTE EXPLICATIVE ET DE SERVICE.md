@@ -1,4 +1,3 @@
-NOTE EXPLICATIVE ET DE SERVICE
 Objet : Mise en place du nouvel outil numérique de gestion des feuilles de garde et des équipages
 
 1. Contexte et Objectif
