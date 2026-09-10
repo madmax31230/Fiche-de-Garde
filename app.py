@@ -9,7 +9,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. Styles CSS pour un rendu type "Fiche Véhicule" moderne et pro
+# 2. Styles CSS pour un rendu propre et structuré
 st.markdown("""
     <style>
     .main {
@@ -33,6 +33,15 @@ st.markdown("""
         font-style: italic;
         margin: 5px 0 0 0;
         opacity: 0.9;
+    }
+    .section-title {
+        color: #ff5252;
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-top: 25px;
+        margin-bottom: 10px;
+        border-bottom: 2px solid #333;
+        padding-bottom: 5px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -75,7 +84,6 @@ def charger_donnees_depuis_gsheets(sheet_id):
                             personnel = p
                     donnees.append({"Agrès": nom_engin_actuel, "Fonction": valeur_maj, "Personnel": personnel})
                 elif not is_ignore and len(valeur_maj) >= 2 and not is_fonction:
-                    # On regarde s'il y a un numéro juste à côté ou en dessous pour composer ex: "VSAV 98"
                     num_indicatif = ""
                     if col_idx + 1 < df_brut.shape[1]:
                         val_suiv = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
@@ -140,8 +148,8 @@ def charger_donnees_depuis_gsheets(sheet_id):
 # En-tête visuel
 st.markdown("""
     <div class="header-box">
-        <p class="header-title">🚒 CENTRE DE SECOURS DE X</p>
-        <p class="header-subtitle">Feuille de Garde - Visualisation distincte par Engin</p>
+        <p class="header-title">🚒 CENTRE DE SECOURS X</p>
+        <p class="header-subtitle">Feuille de Garde - Organisation par taille d'équipage</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -151,48 +159,61 @@ try:
     if df_garde.empty:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
     else:
-        # On identifie chaque bloc d'agrès unique avec son numéro (ex: VSAV 98, VSAV 17, etc.)
+        # Groupement des véhicules par nombre de postes (taille d'équipage)
         agres_uniques = df_garde['Agrès'].unique()
+        groupes_par_taille = {}
         
-        colonnes_affichage = st.columns(3)
+        for agres in agres_uniques:
+            df_agres = df_garde[df_garde['Agrès'] == agres]
+            nb_postes = len(df_agres)
+            if nb_postes not in groupes_par_taille:
+                groupes_par_taille[nb_postes] = []
+            groupes_par_taille[nb_postes].append((agres, df_agres))
+
         lignes_mises_a_jour = []
-        
-        for idx_agres, agres in enumerate(agres_uniques):
-            col_cible = colonnes_affichage[idx_agres % 3]
+
+        # Affichage par sections triées du plus grand équipage au plus petit
+        for nb_postes in sorted(groupes_par_taille.keys(), reverse=True):
+            st.markdown(f'<div class="section-title">Équipages à {nb_postes} postes</div>', unsafe_allow_html=True)
             
-            with col_cible:
-                st.markdown(f"### 🚚 {agres}")
+            vehicules_du_groupe = groupes_par_taille[nb_postes]
+            
+            # Affichage par lignes de 3 colonnes pour chaque groupe
+            for i_veh in range(0, len(vehicules_du_groupe), 3):
+                cols_ligne = st.columns(3)
+                batch = vehicules_du_groupe[i_veh:i_veh+3]
                 
-                df_agres = df_garde[df_garde['Agrès'] == agres]
-                
-                for i, row in df_agres.iterrows():
-                    cols_poste = st.columns([1, 2.5])
-                    with cols_poste[0]:
-                        st.markdown(f"`{row['Fonction']}`")
-                    with cols_poste[1]:
-                        agent_actuel = row['Personnel']
-                        options = [""] + liste_agents if liste_agents else [""]
-                        default_idx = 0
-                        for opt_idx, opt in enumerate(options):
-                            if agent_actuel.strip().lower() in opt.lower():
-                                default_idx = opt_idx
-                                break
-                                
-                        choix_label = st.selectbox(
-                            f"{agres}_{row['Fonction']}_{i}", 
-                            options=options, 
-                            index=default_idx, 
-                            label_visibility="collapsed",
-                            key=f"agent_{i}_{agres}"
-                        )
-                        nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
-                    
-                    lignes_mises_a_jour.append({
-                        "Agrès": agres,
-                        "Fonction": row['Fonction'],
-                        "Personnel": nouveau_personnel
-                    })
-                st.divider()
+                for idx_col, (agres, df_agres) in enumerate(batch):
+                    with cols_ligne[idx_col]:
+                        st.markdown(f"### 🚚 {agres}")
+                        for i, row in df_agres.iterrows():
+                            cols_poste = st.columns([1, 2.5])
+                            with cols_poste[0]:
+                                st.markdown(f"`{row['Fonction']}`")
+                            with cols_poste[1]:
+                                agent_actuel = row['Personnel']
+                                options = [""] + liste_agents if liste_agents else [""]
+                                default_idx = 0
+                                for opt_idx, opt in enumerate(options):
+                                    if agent_actuel.strip().lower() in opt.lower():
+                                        default_idx = opt_idx
+                                        break
+                                        
+                                choix_label = st.selectbox(
+                                    f"{agres}_{row['Fonction']}_{i}", 
+                                    options=options, 
+                                    index=default_idx, 
+                                    label_visibility="collapsed",
+                                    key=f"agent_{i}_{agres}"
+                                )
+                                nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
+                            
+                            lignes_mises_a_jour.append({
+                                "Agrès": agres,
+                                "Fonction": row['Fonction'],
+                                "Personnel": nouveau_personnel
+                            })
+                        st.divider()
 
         with st.sidebar:
             st.markdown("### 📥 Actions")
