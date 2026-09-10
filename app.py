@@ -37,7 +37,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Ton ID Google Sheets extrait de ton lien
+# Ton ID Google Sheets
 GOOGLE_SHEET_ID = "1WbCH8Q4r2rM2WL1f8KP2o7XaADi-1vjC"
 
 @st.cache_data(ttl=60)
@@ -55,7 +55,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOUT", "SEPTEMBRE", 
                     "OCTOBRE", "NOVEMBRE", "DECEMBRE", "CONSIGNES", "SPORT", "FMA"]
     
-    agres_en_cours = "GENERAL"
+    nom_engin_actuel = "GENERAL"
     if not df_brut.empty:
         for col_idx in range(df_brut.shape[1]):
             for row_idx in range(df_brut.shape[0]):
@@ -73,9 +73,23 @@ def charger_donnees_depuis_gsheets(sheet_id):
                         p = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
                         if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
                             personnel = p
-                    donnees.append({"Agrès": agres_en_cours, "Fonction": valeur_maj, "Personnel": personnel})
+                    donnees.append({"Agrès": nom_engin_actuel, "Fonction": valeur_maj, "Personnel": personnel})
                 elif not is_ignore and len(valeur_maj) >= 2 and not is_fonction:
-                    agres_en_cours = valeur
+                    # On regarde s'il y a un numéro juste à côté ou en dessous pour composer ex: "VSAV 98"
+                    num_indicatif = ""
+                    if col_idx + 1 < df_brut.shape[1]:
+                        val_suiv = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
+                        if val_suiv.replace('.', '', 1).isdigit():
+                            num_indicatif = str(int(float(val_suiv)))
+                    elif row_idx + 1 < df_brut.shape[0]:
+                        val_dessous = str(df_brut.iloc[row_idx + 1, col_idx]).strip()
+                        if val_dessous.replace('.', '', 1).isdigit():
+                            num_indicatif = str(int(float(val_dessous)))
+                            
+                    if num_indicatif:
+                        nom_engin_actuel = f"{valeur} {num_indicatif}"
+                    else:
+                        nom_engin_actuel = valeur
                     
     df_garde = pd.DataFrame(donnees)
 
@@ -127,7 +141,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
 st.markdown("""
     <div class="header-box">
         <p class="header-title">🚒 CENTRE DE SECOURS DE L'ISLE-EN-DODON</p>
-        <p class="header-subtitle">Feuille de Garde - Visualisation par Engin</p>
+        <p class="header-subtitle">Feuille de Garde - Visualisation distincte par Engin</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -135,13 +149,12 @@ try:
     df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
-        st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets. Vérifiez que le lien est bien partagé en mode public ('Tous les utilisateurs ayant le lien').")
+        st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
     else:
+        # On identifie chaque bloc d'agrès unique avec son numéro (ex: VSAV 98, VSAV 17, etc.)
         agres_uniques = df_garde['Agrès'].unique()
         
-        # Grille sur 3 colonnes pour afficher les véhicules côte à côte
         colonnes_affichage = st.columns(3)
-        
         lignes_mises_a_jour = []
         
         for idx_agres, agres in enumerate(agres_uniques):
@@ -170,7 +183,7 @@ try:
                             options=options, 
                             index=default_idx, 
                             label_visibility="collapsed",
-                            key=f"agent_{i}"
+                            key=f"agent_{i}_{agres}"
                         )
                         nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
                     
@@ -181,7 +194,6 @@ try:
                     })
                 st.divider()
 
-        # Barre latérale pour l'exportation
         with st.sidebar:
             st.markdown("### 📥 Actions")
             output = BytesIO()
