@@ -4,7 +4,7 @@ from io import BytesIO
 
 # 1. Configuration de la page en mode large
 st.set_page_config(
-    page_title="Feuille de Garde - L'Isle-en-Dodon", 
+    page_title="Feuille de Garde - X", 
     page_icon="🚒", 
     layout="wide"
 )
