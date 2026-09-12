@@ -5,7 +5,7 @@ import openpyxl
 import os
 
 st.set_page_config(
-    page_title="Feuille de Garde - CS CARSALADE", 
+    page_title="Feuille de Garde - L'Isle-en-Dodon", 
     page_icon="🚒", 
     layout="wide"
 )
@@ -151,17 +151,25 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 
             nom_simple = f"{nom} {prenom}"
             
-            specs = []
-            for c in range(5, len(row)):
+            # --- MODIFICATION ICI : On scanne TOUTES les colonnes pour trouver les spécialités ---
+            specs_filtre = []
+            for c in range(2, len(row)): 
                 val = row.iloc[c]
                 if pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan":
-                    specs.append(str(val).strip().upper())
+                    specs_filtre.append(str(val).strip().upper())
+            
+            # Pour l'affichage visuel du menu, on ne garde que le grade et les specs lointaines
+            specs_affichage = []
+            for c in range(5, len(row)): 
+                val = row.iloc[c]
+                if pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan":
+                    specs_affichage.append(str(val).strip().upper())
             
             details = []
             if grade and grade.lower() != 'nan':
                 details.append(grade)
-            if specs:
-                details.extend(specs)
+            if specs_affichage:
+                details.extend(specs_affichage)
                 
             if details:
                 label = f"{nom_simple} ({' - '.join(details)})"
@@ -170,7 +178,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 
             liste_agents.append(label)
             dict_agents[label] = nom_simple
-            dict_specs[label] = specs
+            dict_specs[label] = specs_filtre # Le filtre utilisera TOUTES les cases de l'agent
             
         liste_agents = sorted(list(set(liste_agents)))
     except Exception:
@@ -185,27 +193,26 @@ try:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
     else:
         
-        # --- FILTRE DE COMPÉTENCES INTELLIGENT ---
+        # --- FILTRE DE COMPÉTENCES RENFORCÉ ---
         def get_options_filtrees(agres_nom, fonction, agent_actuel_str):
             options_valides = [""]
             for opt in liste_agents:
                 specs_agent = dict_specs.get(opt, [])
                 est_autorise = True
                 
-                # Normalisation : supprime les espaces et tirets pour éviter les erreurs de syntaxe ("CA 1E" -> "CA1E")
-                specs_clean = [str(s).replace(" ", "").replace("-", "") for s in specs_agent]
+                # Normalisation ultra-stricte : "CA 1E" ou "CA-1E" devient "CA1E"
+                specs_clean = [str(s).replace(" ", "").replace("-", "").upper() for s in specs_agent]
                 
-                # RÈGLE 1 : CA du VSAV (Accepte CA, CA1E, CATE...)
+                # RÈGLE 1 : CA du VSAV (Doit posséder CA, CA1E ou CATE)
                 if "VSAV" in agres_nom.upper() and fonction.upper() == "CA":
-                    if not any(s.startswith("CA") for s in specs_clean):
+                    if not any(kw in specs_clean for kw in ["CA", "CA1E", "CATE", "CAVSAV"]):
                         est_autorise = False
                         
-                # RÈGLE 2 : CA du FPT (Accepte uniquement CATE)
+                # RÈGLE 2 : CA du FPT (Doit posséder CATE)
                 elif "FPT" in agres_nom.upper() and fonction.upper() == "CA":
-                    if not any("CATE" in s for s in specs_clean):
+                    if not any(kw in specs_clean for kw in ["CATE", "CAFPT"]):
                         est_autorise = False
                         
-                # L'agent est ajouté s'il est qualifié OU s'il était déjà inscrit par erreur dans le tableau source
                 if est_autorise or (agent_actuel_str.strip() != "" and agent_actuel_str.strip().lower() in opt.lower()):
                     options_valides.append(opt)
                     
