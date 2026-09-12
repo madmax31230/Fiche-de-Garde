@@ -5,7 +5,7 @@ import openpyxl
 import os
 
 st.set_page_config(
-    page_title="Feuille de Garde - CARSALADE", 
+    page_title="Feuille de Garde - CS CARSALADE", 
     page_icon="🚒", 
     layout="wide"
 )
@@ -134,7 +134,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
 
     liste_agents = []
     dict_agents = {}
-    dict_specs = {} # Nouveau dictionnaire pour stocker les compétences de chaque agent
+    dict_specs = {}
 
     try:
         url_effectif = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=EFFECTIF"
@@ -155,7 +155,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
             for c in range(5, len(row)):
                 val = row.iloc[c]
                 if pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan":
-                    specs.append(str(val).strip().upper()) # Stockage en majuscules pour le filtre
+                    specs.append(str(val).strip().upper())
             
             details = []
             if grade and grade.lower() != 'nan':
@@ -170,7 +170,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 
             liste_agents.append(label)
             dict_agents[label] = nom_simple
-            dict_specs[label] = specs # On associe les spécialités au label de l'agent
+            dict_specs[label] = specs
             
         liste_agents = sorted(list(set(liste_agents)))
     except Exception:
@@ -185,29 +185,31 @@ try:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
     else:
         
-        # --- FONCTION DE FILTRAGE DES COMPÉTENCES ---
+        # --- FILTRE DE COMPÉTENCES INTELLIGENT ---
         def get_options_filtrees(agres_nom, fonction, agent_actuel_str):
             options_valides = [""]
             for opt in liste_agents:
                 specs_agent = dict_specs.get(opt, [])
                 est_autorise = True
                 
-                # RÈGLE 1 : CA du VSAV (Doit avoir CA1E ou CA)
+                # Normalisation : supprime les espaces et tirets pour éviter les erreurs de syntaxe ("CA 1E" -> "CA1E")
+                specs_clean = [str(s).replace(" ", "").replace("-", "") for s in specs_agent]
+                
+                # RÈGLE 1 : CA du VSAV (Accepte CA, CA1E, CATE...)
                 if "VSAV" in agres_nom.upper() and fonction.upper() == "CA":
-                    if not any(s in specs_agent for s in ["CA1E", "CA"]):
+                    if not any(s.startswith("CA") for s in specs_clean):
                         est_autorise = False
                         
-                # RÈGLE 2 : CA du FPT (Doit avoir CATE)
+                # RÈGLE 2 : CA du FPT (Accepte uniquement CATE)
                 elif "FPT" in agres_nom.upper() and fonction.upper() == "CA":
-                    if "CATE" not in specs_agent:
+                    if not any("CATE" in s for s in specs_clean):
                         est_autorise = False
                         
-                # On ajoute l'agent s'il est qualifié OU s'il était déjà inscrit par erreur dans le fichier source
+                # L'agent est ajouté s'il est qualifié OU s'il était déjà inscrit par erreur dans le tableau source
                 if est_autorise or (agent_actuel_str.strip() != "" and agent_actuel_str.strip().lower() in opt.lower()):
                     options_valides.append(opt)
                     
             return options_valides
-        # ---------------------------------------------
 
         agres_uniques = df_garde['Agrès'].unique()
         modifications_agents = {}
@@ -231,7 +233,6 @@ try:
                             with cols_poste[1]:
                                 agent_actuel = row['Personnel']
                                 
-                                # Appel du nouveau filtre de compétences
                                 options = get_options_filtrees(agres, row['Fonction'], agent_actuel)
                                 
                                 default_idx = 0
@@ -279,7 +280,6 @@ try:
                                 with cols_poste[1]:
                                     agent_actuel = row['Personnel']
                                     
-                                    # Appel du nouveau filtre de compétences
                                     options = get_options_filtrees(agres, row['Fonction'], agent_actuel)
                                     
                                     default_idx = 0
@@ -329,7 +329,7 @@ try:
                     wb.save(output)
                     
                     st.download_button(
-                        label="📥 Télécharger la Feuille de GARDE", 
+                        label="📥 Télécharger la Feuille Parfaite", 
                         data=output.getvalue(), 
                         file_name="Feuille_Garde_Finale.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
