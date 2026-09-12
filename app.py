@@ -5,7 +5,7 @@ import openpyxl
 import os
 
 st.set_page_config(
-    page_title="Feuille de Garde - CS CARSALADE", 
+    page_title="Feuille de Garde - CARSALADE", 
     page_icon="🚒", 
     layout="wide"
 )
@@ -38,7 +38,6 @@ GOOGLE_SHEET_ID = "1WbCH8Q4r2rM2WL1f8KP2o7XaADi-1vjC"
 
 @st.cache_data(ttl=60)
 def charger_donnees_depuis_gsheets(sheet_id):
-    # Retour au lien CSV : ultra rapide et non bloqué par Google
     try:
         url_billet = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=BILLET"
         df_brut = pd.read_csv(url_billet, header=None)
@@ -53,12 +52,21 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     "OCTOBRE", "NOVEMBRE", "DECEMBRE", "CONSIGNES", "SPORT", "FMA",
                     "SPECIALITE", "SPECIALITÉ", "SPÉCIALITÉ", "SPÉCIALITE"]
     
+    INDICATIFS_AUTO = {
+        "VSRM": "VSRM 10",
+        "VFCDG": "VFCDG 88",
+        "FPT": "FPT 11",
+        "EPC": "EPC 13",
+        "VID": "VID 34",
+        "CCFM": "CCFM 29",
+        "VSMPM": "VSMPM 02"
+    }
+
     nom_engin_actuel = "GENERAL"
     vehicules_vus = {}
     anchor_csv = None
 
     if not df_brut.empty:
-        # On parcourt colonne par colonne pour trouver les postes
         for col_idx in range(df_brut.shape[1]):
             for row_idx in range(df_brut.shape[0]):
                 valeur = str(df_brut.iloc[row_idx, col_idx]).strip()
@@ -70,7 +78,6 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 is_ignore = any(ignore in valeur_maj for ignore in mots_ignores)
                 
                 if is_fonction:
-                    # On sauvegarde la première fonction (ex: "CA") comme point de repère (Ancre)
                     if anchor_csv is None:
                         anchor_csv = (row_idx, col_idx, valeur_maj)
                         
@@ -99,21 +106,36 @@ def charger_donnees_depuis_gsheets(sheet_id):
                             
                     base_name = f"{valeur_maj} {num_indicatif}" if num_indicatif else valeur_maj
                     
-                    if base_name in vehicules_vus:
-                        vehicules_vus[base_name] += 1
-                        nom_engin_actuel = f"{base_name} {vehicules_vus[base_name]}"
-                        if vehicules_vus[base_name] == 2:
-                            for d in donnees:
-                                if d["Agrès"] == base_name:
-                                    d["Agrès"] = f"{base_name} 1"
+                    if base_name == "VSAV":
+                        if base_name in vehicules_vus:
+                            vehicules_vus[base_name] += 1
+                            if vehicules_vus[base_name] == 2:
+                                nom_engin_actuel = "VSAV 17"
+                            else:
+                                nom_engin_actuel = f"VSAV {vehicules_vus[base_name]}"
+                        else:
+                            vehicules_vus[base_name] = 1
+                            nom_engin_actuel = "VSAV 98"
+                    elif base_name in INDICATIFS_AUTO:
+                        nom_engin_actuel = INDICATIFS_AUTO[base_name]
                     else:
-                        vehicules_vus[base_name] = 1
-                        nom_engin_actuel = base_name
+                        if base_name in vehicules_vus:
+                            vehicules_vus[base_name] += 1
+                            nom_engin_actuel = f"{base_name} {vehicules_vus[base_name]}"
+                            if vehicules_vus[base_name] == 2:
+                                for d in donnees:
+                                    if d["Agrès"] == base_name:
+                                        d["Agrès"] = f"{base_name} 1"
+                        else:
+                            vehicules_vus[base_name] = 1
+                            nom_engin_actuel = base_name
                     
     df_garde = pd.DataFrame(donnees)
 
     liste_agents = []
     dict_agents = {}
+    dict_specs = {} # Nouveau dictionnaire pour stocker les compétences de chaque agent
+
     try:
         url_effectif = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=EFFECTIF"
         df_eff_brut = pd.read_csv(url_effectif, header=None)
@@ -133,7 +155,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
             for c in range(5, len(row)):
                 val = row.iloc[c]
                 if pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan":
-                    specs.append(str(val).strip())
+                    specs.append(str(val).strip().upper()) # Stockage en majuscules pour le filtre
             
             details = []
             if grade and grade.lower() != 'nan':
@@ -148,19 +170,45 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 
             liste_agents.append(label)
             dict_agents[label] = nom_simple
+            dict_specs[label] = specs # On associe les spécialités au label de l'agent
             
         liste_agents = sorted(list(set(liste_agents)))
     except Exception:
         pass
 
-    return df_garde, liste_agents, dict_agents, anchor_csv
+    return df_garde, liste_agents, dict_agents, anchor_csv, dict_specs
 
 try:
-    df_garde, liste_agents, dict_agents, anchor_csv = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
+    df_garde, liste_agents, dict_agents, anchor_csv, dict_specs = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
     else:
+        
+        # --- FONCTION DE FILTRAGE DES COMPÉTENCES ---
+        def get_options_filtrees(agres_nom, fonction, agent_actuel_str):
+            options_valides = [""]
+            for opt in liste_agents:
+                specs_agent = dict_specs.get(opt, [])
+                est_autorise = True
+                
+                # RÈGLE 1 : CA du VSAV (Doit avoir CA1E ou CA)
+                if "VSAV" in agres_nom.upper() and fonction.upper() == "CA":
+                    if not any(s in specs_agent for s in ["CA1E", "CA"]):
+                        est_autorise = False
+                        
+                # RÈGLE 2 : CA du FPT (Doit avoir CATE)
+                elif "FPT" in agres_nom.upper() and fonction.upper() == "CA":
+                    if "CATE" not in specs_agent:
+                        est_autorise = False
+                        
+                # On ajoute l'agent s'il est qualifié OU s'il était déjà inscrit par erreur dans le fichier source
+                if est_autorise or (agent_actuel_str.strip() != "" and agent_actuel_str.strip().lower() in opt.lower()):
+                    options_valides.append(opt)
+                    
+            return options_valides
+        # ---------------------------------------------
+
         agres_uniques = df_garde['Agrès'].unique()
         modifications_agents = {}
         
@@ -182,10 +230,13 @@ try:
                                 st.markdown(f"`{row['Fonction']}`")
                             with cols_poste[1]:
                                 agent_actuel = row['Personnel']
-                                options = [""] + liste_agents if liste_agents else [""]
+                                
+                                # Appel du nouveau filtre de compétences
+                                options = get_options_filtrees(agres, row['Fonction'], agent_actuel)
+                                
                                 default_idx = 0
                                 for opt_idx, opt in enumerate(options):
-                                    if agent_actuel.strip().lower() in opt.lower():
+                                    if agent_actuel.strip().lower() in opt.lower() and agent_actuel.strip() != "":
                                         default_idx = opt_idx
                                         break
                                 choix_label = st.selectbox(
@@ -227,10 +278,13 @@ try:
                                     st.markdown(f"`{row['Fonction']}`")
                                 with cols_poste[1]:
                                     agent_actuel = row['Personnel']
-                                    options = [""] + liste_agents if liste_agents else [""]
+                                    
+                                    # Appel du nouveau filtre de compétences
+                                    options = get_options_filtrees(agres, row['Fonction'], agent_actuel)
+                                    
                                     default_idx = 0
                                     for opt_idx, opt in enumerate(options):
-                                        if agent_actuel.strip().lower() in opt.lower():
+                                        if agent_actuel.strip().lower() in opt.lower() and agent_actuel.strip() != "":
                                             default_idx = opt_idx
                                             break
                                     choix_label = st.selectbox(
@@ -243,7 +297,7 @@ try:
                             st.divider()
 
         with st.sidebar:
-            st.markdown("### 📥 Télécharger Feuille de Garde ###")
+            st.markdown("### 📥 Actions")
             
             if os.path.exists("modele.xlsx"):
                 try:
@@ -251,14 +305,11 @@ try:
                     if 'BILLET' in wb.sheetnames:
                         ws = wb['BILLET']
                         
-                        # -- ALGORITHME D'ANCRAGE DYNAMIQUE --
-                        # On calcule le décalage (offset) exact entre le Google Sheets et le modèle Excel
                         row_offset = 1
                         col_offset = 1
                         
                         if anchor_csv:
                             anchor_xls = None
-                            # On cherche la même "Ancre" dans ton modele.xlsx
                             for c in range(1, 30):
                                 for r in range(1, 100):
                                     val = ws.cell(row=r, column=c).value
@@ -268,11 +319,9 @@ try:
                                 if anchor_xls: break
                             
                             if anchor_xls:
-                                # On calcule la différence de coordonnées
                                 row_offset = anchor_xls[0] - anchor_csv[0]
                                 col_offset = anchor_xls[1] - anchor_csv[1]
 
-                        # Injection avec décalage corrigé automatiquement
                         for (r_csv, c_csv), val in modifications_agents.items():
                             ws.cell(row=r_csv + row_offset, column=c_csv + col_offset, value=val)
                     
@@ -280,7 +329,7 @@ try:
                     wb.save(output)
                     
                     st.download_button(
-                        label="📥 Télécharger la Feuille Garde", 
+                        label="📥 Télécharger la Feuille de GARDE", 
                         data=output.getvalue(), 
                         file_name="Feuille_Garde_Finale.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
