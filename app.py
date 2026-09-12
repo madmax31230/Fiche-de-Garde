@@ -3,10 +3,9 @@ import pandas as pd
 from io import BytesIO
 import openpyxl
 import os
-import requests
 
 st.set_page_config(
-    page_title="Feuille de Garde - L'Isle-en-Dodon", 
+    page_title="Feuille de Garde - CS CARSALADE", 
     page_icon="🚒", 
     layout="wide"
 )
@@ -39,18 +38,12 @@ GOOGLE_SHEET_ID = "1WbCH8Q4r2rM2WL1f8KP2o7XaADi-1vjC"
 
 @st.cache_data(ttl=60)
 def charger_donnees_depuis_gsheets(sheet_id):
-    # On télécharge tout le tableur au format Excel pour garder les cases vides intactes
-    url_xlsx = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
-    
+    # Retour au lien CSV : ultra rapide et non bloqué par Google
     try:
-        response = requests.get(url_xlsx)
-        fichier_excel = BytesIO(response.content)
-        
-        df_brut = pd.read_excel(fichier_excel, sheet_name='BILLET', header=None, engine='openpyxl')
-        df_eff_brut = pd.read_excel(fichier_excel, sheet_name='EFFECTIF', header=None, engine='openpyxl')
-    except Exception as e:
-        st.error(f"Erreur de connexion au Google Sheets: {e}")
-        return pd.DataFrame(), [], {}
+        url_billet = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=BILLET"
+        df_brut = pd.read_csv(url_billet, header=None)
+    except Exception:
+        df_brut = pd.DataFrame()
 
     donnees = []
     fonctions_valides = ["CA", "COND", "EQ", "CE B1", "EQ B1", "CE B2", "EQ B2", "OBS", "COND/EQ"]
@@ -62,8 +55,10 @@ def charger_donnees_depuis_gsheets(sheet_id):
     
     nom_engin_actuel = "GENERAL"
     vehicules_vus = {}
+    anchor_csv = None
 
     if not df_brut.empty:
+        # On parcourt colonne par colonne pour trouver les postes
         for col_idx in range(df_brut.shape[1]):
             for row_idx in range(df_brut.shape[0]):
                 valeur = str(df_brut.iloc[row_idx, col_idx]).strip()
@@ -75,6 +70,10 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 is_ignore = any(ignore in valeur_maj for ignore in mots_ignores)
                 
                 if is_fonction:
+                    # On sauvegarde la première fonction (ex: "CA") comme point de repère (Ancre)
+                    if anchor_csv is None:
+                        anchor_csv = (row_idx, col_idx, valeur_maj)
+                        
                     personnel = ""
                     if col_idx + 1 < df_brut.shape[1]:
                         p = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
@@ -115,8 +114,10 @@ def charger_donnees_depuis_gsheets(sheet_id):
 
     liste_agents = []
     dict_agents = {}
-    
-    if not df_eff_brut.empty:
+    try:
+        url_effectif = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=EFFECTIF"
+        df_eff_brut = pd.read_csv(url_effectif, header=None)
+        
         for r in range(1, len(df_eff_brut)):
             row = df_eff_brut.iloc[r]
             nom = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
@@ -149,21 +150,16 @@ def charger_donnees_depuis_gsheets(sheet_id):
             dict_agents[label] = nom_simple
             
         liste_agents = sorted(list(set(liste_agents)))
+    except Exception:
+        pass
 
-    return df_garde, liste_agents, dict_agents
-
-st.markdown("""
-    <div class="header-box">
-        <p class="header-title">🚒 CENTRE DE SECOURS DE L'ISLE-EN-DODON</p>
-        <p class="header-subtitle">Feuille de Garde - Secours à Personne prioritaires</p>
-    </div>
-""", unsafe_allow_html=True)
+    return df_garde, liste_agents, dict_agents, anchor_csv
 
 try:
-    df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
+    df_garde, liste_agents, dict_agents, anchor_csv = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
-        st.warning("⚠️ Impossible de lire les données. Vérifiez l'ID de votre Google Sheets.")
+        st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
     else:
         agres_uniques = df_garde['Agrès'].unique()
         modifications_agents = {}
@@ -247,30 +243,54 @@ try:
                             st.divider()
 
         with st.sidebar:
-            st.markdown("### 📥 Actions")
+            st.markdown("### 📥 Télécharger Feuille de Garde ###")
             
             if os.path.exists("modele.xlsx"):
-                wb = openpyxl.load_workbook("modele.xlsx")
-                if 'BILLET' in wb.sheetnames:
-                    ws = wb['BILLET']
+                try:
+                    wb = openpyxl.load_workbook("modele.xlsx")
+                    if 'BILLET' in wb.sheetnames:
+                        ws = wb['BILLET']
+                        
+                        # -- ALGORITHME D'ANCRAGE DYNAMIQUE --
+                        # On calcule le décalage (offset) exact entre le Google Sheets et le modèle Excel
+                        row_offset = 1
+                        col_offset = 1
+                        
+                        if anchor_csv:
+                            anchor_xls = None
+                            # On cherche la même "Ancre" dans ton modele.xlsx
+                            for c in range(1, 30):
+                                for r in range(1, 100):
+                                    val = ws.cell(row=r, column=c).value
+                                    if val and str(val).strip().upper() == anchor_csv[2]:
+                                        anchor_xls = (r, c)
+                                        break
+                                if anchor_xls: break
+                            
+                            if anchor_xls:
+                                # On calcule la différence de coordonnées
+                                row_offset = anchor_xls[0] - anchor_csv[0]
+                                col_offset = anchor_xls[1] - anchor_csv[1]
+
+                        # Injection avec décalage corrigé automatiquement
+                        for (r_csv, c_csv), val in modifications_agents.items():
+                            ws.cell(row=r_csv + row_offset, column=c_csv + col_offset, value=val)
                     
-                    for (r, c), val in modifications_agents.items():
-                        # Injection parfaite : on respecte l'indice exact de Pandas (+1 pour openpyxl)
-                        ws.cell(row=r + 1, column=c + 1, value=val)
-                
-                output = BytesIO()
-                wb.save(output)
-                
-                st.download_button(
-                    label="📥 Télécharger la Feuille Parfaite", 
-                    data=output.getvalue(), 
-                    file_name="Feuille_Garde_Finale.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary",
-                    use_container_width=True
-                )
+                    output = BytesIO()
+                    wb.save(output)
+                    
+                    st.download_button(
+                        label="📥 Télécharger la Feuille Garde", 
+                        data=output.getvalue(), 
+                        file_name="Feuille_Garde_Finale.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        use_container_width=True
+                    )
+                except Exception as e:
+                    st.error(f"Erreur d'édition : {e}")
             else:
-                st.error("❌ Fichier 'modele.xlsx' introuvable sur le serveur. Veuillez l'ajouter à GitHub.")
+                st.error("❌ Fichier 'modele.xlsx' introuvable sur le serveur.")
 
 except Exception as e:
-    st.error(f"⚠️ Erreur : {e}")
+    st.error(f"⚠️ Erreur Globale : {e}")
