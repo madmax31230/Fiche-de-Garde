@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
+import requests
 from io import BytesIO
-import os
+import openpyxl
 
 # 1. Configuration de la page
 st.set_page_config(
@@ -27,7 +28,7 @@ st.markdown("""
         border-bottom: 2px solid #333; padding-bottom: 5px;
     }
     .vsav-title {
-        color: #4fc3f7; /* Couleur bleue pour distinguer les secours à personne */
+        color: #4fc3f7;
         font-size: 1.5rem; font-weight: 800;
         margin-top: 10px; margin-bottom: 10px;
         border-bottom: 3px solid #0288d1; padding-bottom: 5px;
@@ -54,7 +55,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     "SPECIALITE", "SPECIALITÉ", "SPÉCIALITÉ", "SPÉCIALITE"]
     
     nom_engin_actuel = "GENERAL"
-    vehicules_vus = {} # Dictionnaire pour compter les occurrences des véhicules
+    vehicules_vus = {}
 
     if not df_brut.empty:
         for col_idx in range(df_brut.shape[1]):
@@ -74,8 +75,11 @@ def charger_donnees_depuis_gsheets(sheet_id):
                         if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
                             personnel = p
                     donnees.append({
-                        "row_idx": row_idx, "col_personnel": col_idx + 1, 
-                        "Agrès": nom_engin_actuel, "Fonction": valeur_maj, "Personnel": personnel
+                        "row_idx": row_idx, 
+                        "col_personnel": col_idx + 1, 
+                        "Agrès": nom_engin_actuel, 
+                        "Fonction": valeur_maj, 
+                        "Personnel": personnel
                     })
                 elif not is_ignore and len(valeur_maj) >= 2 and not is_fonction:
                     num_indicatif = ""
@@ -90,11 +94,9 @@ def charger_donnees_depuis_gsheets(sheet_id):
                             
                     base_name = f"{valeur_maj} {num_indicatif}" if num_indicatif else valeur_maj
                     
-                    # Séparation automatique si un même nom (ex: VSAV) apparaît plusieurs fois
                     if base_name in vehicules_vus:
                         vehicules_vus[base_name] += 1
                         nom_engin_actuel = f"{base_name} {vehicules_vus[base_name]}"
-                        # Si c'est le 2ème, on renomme rétroactivement le 1er en "Nom 1" pour être propre
                         if vehicules_vus[base_name] == 2:
                             for d in donnees:
                                 if d["Agrès"] == base_name:
@@ -105,7 +107,6 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'effectif
     liste_agents = []
     dict_agents = {}
     try:
@@ -147,7 +148,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
     except Exception:
         pass
 
-    return df_brut, df_garde, liste_agents, dict_agents
+    return df_garde, liste_agents, dict_agents
 
 st.markdown("""
     <div class="header-box">
@@ -157,7 +158,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 try:
-    df_brut_billet, df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
+    df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
@@ -165,20 +166,14 @@ try:
         agres_uniques = df_garde['Agrès'].unique()
         modifications_agents = {}
         
-        # Séparation des VSAV et des autres engins
         vsav_uniques = [a for a in agres_uniques if "VSAV" in a.upper()]
         autres_uniques = [a for a in agres_uniques if "VSAV" not in a.upper()]
 
-        # ==========================================
-        # BLOC 1 : LES VSAV TOUT EN HAUT
-        # ==========================================
         if vsav_uniques:
             st.markdown('<div class="vsav-title">🚑 VÉHICULES DE SECOURS AUX VICTIMES (VSAV)</div>', unsafe_allow_html=True)
-            
             for i_veh in range(0, len(vsav_uniques), 3):
                 cols_ligne = st.columns(3)
                 batch = vsav_uniques[i_veh:i_veh+3]
-                
                 for idx_col, agres in enumerate(batch):
                     df_agres = df_garde[df_garde['Agrès'] == agres]
                     with cols_ligne[idx_col]:
@@ -195,20 +190,15 @@ try:
                                     if agent_actuel.strip().lower() in opt.lower():
                                         default_idx = opt_idx
                                         break
-                                        
                                 choix_label = st.selectbox(
                                     f"{agres}_{row['Fonction']}_{i}", 
                                     options=options, index=default_idx, 
                                     label_visibility="collapsed", key=f"agent_{i}_{agres}"
                                 )
                                 nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
-                            
                             modifications_agents[(row['row_idx'], row['col_personnel'])] = nouveau_personnel
                         st.divider()
 
-        # ==========================================
-        # BLOC 2 : LE RESTE DES ENGINS TRIÉS PAR TAILLE
-        # ==========================================
         groupes_par_taille = {}
         for agres in autres_uniques:
             df_agres = df_garde[df_garde['Agrès'] == agres]
@@ -230,7 +220,6 @@ try:
                 for i_veh in range(0, len(vehicules_du_groupe), 3):
                     cols_ligne = st.columns(3)
                     batch = vehicules_du_groupe[i_veh:i_veh+3]
-                    
                     for idx_col, (agres, df_agres) in enumerate(batch):
                         with cols_ligne[idx_col]:
                             st.markdown(f"### 🚚 {agres}")
@@ -246,44 +235,38 @@ try:
                                         if agent_actuel.strip().lower() in opt.lower():
                                             default_idx = opt_idx
                                             break
-                                            
                                     choix_label = st.selectbox(
                                         f"{agres}_{row['Fonction']}_{i}", 
                                         options=options, index=default_idx, 
                                         label_visibility="collapsed", key=f"agent_{i}_{agres}"
                                     )
                                     nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
-                                
                                 modifications_agents[(row['row_idx'], row['col_personnel'])] = nouveau_personnel
                             st.divider()
 
         with st.sidebar:
             st.markdown("### 📥 Actions")
-            output = BytesIO()
-            df_export = df_brut_billet.copy().astype(object)
-            df_export = df_export.fillna("")
             
-            for (r, c), val in modifications_agents.items():
-                if r < df_export.shape[0] and c < df_export.shape[1]:
-                    df_export.iat[r, c] = val
-
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_export.to_excel(writer, index=False, header=False, sheet_name='BILLET')
-                
-                if os.path.exists("logo.png"):
-                    try:
-                        from openpyxl.drawing.image import Image
-                        img = Image("logo.png")
-                        img.width = 120
-                        img.height = 120
-                        writer.sheets['BILLET'].add_image(img, 'A1')
-                    except Exception as e:
-                        pass
+            # --- NOUVEAU SYSTEME D'EXPORT ---
+            # Télécharge directement le tableur originel (avec ses couleurs, logo, et bordures)
+            url_export_xlsx = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/export?format=xlsx"
+            response = requests.get(url_export_xlsx)
+            
+            # Utilise openpyxl pour modifier ce document tout en préservant le design
+            wb = openpyxl.load_workbook(BytesIO(response.content))
+            if 'BILLET' in wb.sheetnames:
+                ws = wb['BILLET']
+                for (r, c), val in modifications_agents.items():
+                    # openpyxl commence à 1 (et non 0 comme pandas)
+                    ws.cell(row=r + 1, column=c + 1, value=val)
+            
+            output = BytesIO()
+            wb.save(output)
             
             st.download_button(
-                label="📥 Télécharger la Feuille Originale", 
+                label="📥 Télécharger la Feuille Parfaite", 
                 data=output.getvalue(), 
-                file_name="Feuille_Garde_Originale_Mise_A_Jour.xlsx",
+                file_name="Feuille_Garde_Mise_A_Jour.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
                 use_container_width=True
