@@ -31,6 +31,11 @@ st.markdown("""
         margin-top: 10px; margin-bottom: 10px;
         border-bottom: 3px solid #0288d1; padding-bottom: 5px;
     }
+    /* Style pour rendre l'input de l'engin plus imposant */
+    div[data-baseweb="input"] > input {
+        font-weight: bold;
+        color: #ff5252;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -63,6 +68,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
     }
 
     nom_engin_actuel = "GENERAL"
+    coord_engin_actuel = None
     vehicules_vus = {}
     anchor_csv = None
 
@@ -90,10 +96,13 @@ def charger_donnees_depuis_gsheets(sheet_id):
                         "row_idx": row_idx, 
                         "col_personnel": col_idx + 1, 
                         "Agrès": nom_engin_actuel, 
+                        "coord_engin": coord_engin_actuel, # Mémorisation de la case de l'engin
                         "Fonction": valeur_maj, 
                         "Personnel": personnel
                     })
                 elif not is_ignore and len(valeur_maj) >= 2 and not is_fonction:
+                    coord_engin_actuel = (row_idx, col_idx) # Sauvegarde des coordonnées de l'engin
+                    
                     num_indicatif = ""
                     if col_idx + 1 < df_brut.shape[1]:
                         val_suiv = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
@@ -151,14 +160,12 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 
             nom_simple = f"{nom} {prenom}"
             
-            # --- MODIFICATION ICI : On scanne TOUTES les colonnes pour trouver les spécialités ---
             specs_filtre = []
             for c in range(2, len(row)): 
                 val = row.iloc[c]
                 if pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan":
                     specs_filtre.append(str(val).strip().upper())
             
-            # Pour l'affichage visuel du menu, on ne garde que le grade et les specs lointaines
             specs_affichage = []
             for c in range(5, len(row)): 
                 val = row.iloc[c]
@@ -178,7 +185,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 
             liste_agents.append(label)
             dict_agents[label] = nom_simple
-            dict_specs[label] = specs_filtre # Le filtre utilisera TOUTES les cases de l'agent
+            dict_specs[label] = specs_filtre 
             
         liste_agents = sorted(list(set(liste_agents)))
     except Exception:
@@ -192,23 +199,17 @@ try:
     if df_garde.empty:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
     else:
-        
-        # --- FILTRE DE COMPÉTENCES RENFORCÉ ---
         def get_options_filtrees(agres_nom, fonction, agent_actuel_str):
             options_valides = [""]
             for opt in liste_agents:
                 specs_agent = dict_specs.get(opt, [])
                 est_autorise = True
-                
-                # Normalisation ultra-stricte : "CA 1E" ou "CA-1E" devient "CA1E"
                 specs_clean = [str(s).replace(" ", "").replace("-", "").upper() for s in specs_agent]
                 
-                # RÈGLE 1 : CA du VSAV (Doit posséder CA, CA1E ou CATE)
                 if "VSAV" in agres_nom.upper() and fonction.upper() == "CA":
                     if not any(kw in specs_clean for kw in ["CA", "CA1E", "CATE", "CAVSAV"]):
                         est_autorise = False
                         
-                # RÈGLE 2 : CA du FPT (Doit posséder CATE)
                 elif "FPT" in agres_nom.upper() and fonction.upper() == "CA":
                     if not any(kw in specs_clean for kw in ["CATE", "CAFPT"]):
                         est_autorise = False
@@ -220,10 +221,12 @@ try:
 
         agres_uniques = df_garde['Agrès'].unique()
         modifications_agents = {}
+        modifications_engins = {} # Dictionnaire pour stocker les nouveaux noms d'engins
         
         vsav_uniques = [a for a in agres_uniques if "VSAV" in a.upper()]
         autres_uniques = [a for a in agres_uniques if "VSAV" not in a.upper()]
 
+        # BLOC VSAV
         if vsav_uniques:
             st.markdown('<div class="vsav-title">🚑 VÉHICULES DE SECOURS AUX VICTIMES (VSAV)</div>', unsafe_allow_html=True)
             for i_veh in range(0, len(vsav_uniques), 3):
@@ -232,15 +235,21 @@ try:
                 for idx_col, agres in enumerate(batch):
                     df_agres = df_garde[df_garde['Agrès'] == agres]
                     with cols_ligne[idx_col]:
-                        st.markdown(f"### 🚚 {agres}")
+                        # --- NOUVEAU : Champ texte modifiable pour l'engin ---
+                        nouveau_nom_agres = st.text_input("🚚 Engin :", value=agres, key=f"edit_engin_{agres}")
+                        
+                        # Enregistrement du nouveau nom pour l'exportation
+                        coord_engin = df_agres.iloc[0]['coord_engin']
+                        if coord_engin:
+                            modifications_engins[coord_engin] = nouveau_nom_agres
+                            
                         for i, row in df_agres.iterrows():
                             cols_poste = st.columns([1, 2.5])
                             with cols_poste[0]:
                                 st.markdown(f"`{row['Fonction']}`")
                             with cols_poste[1]:
                                 agent_actuel = row['Personnel']
-                                
-                                options = get_options_filtrees(agres, row['Fonction'], agent_actuel)
+                                options = get_options_filtrees(nouveau_nom_agres, row['Fonction'], agent_actuel)
                                 
                                 default_idx = 0
                                 for opt_idx, opt in enumerate(options):
@@ -256,6 +265,7 @@ try:
                             modifications_agents[(row['row_idx'], row['col_personnel'])] = nouveau_personnel
                         st.divider()
 
+        # BLOC AUTRES ENGINS
         groupes_par_taille = {}
         for agres in autres_uniques:
             df_agres = df_garde[df_garde['Agrès'] == agres]
@@ -279,15 +289,20 @@ try:
                     batch = vehicules_du_groupe[i_veh:i_veh+3]
                     for idx_col, (agres, df_agres) in enumerate(batch):
                         with cols_ligne[idx_col]:
-                            st.markdown(f"### 🚚 {agres}")
+                            # --- NOUVEAU : Champ texte modifiable pour l'engin ---
+                            nouveau_nom_agres = st.text_input("🚚 Engin :", value=agres, key=f"edit_engin_{agres}")
+                            
+                            coord_engin = df_agres.iloc[0]['coord_engin']
+                            if coord_engin:
+                                modifications_engins[coord_engin] = nouveau_nom_agres
+                                
                             for i, row in df_agres.iterrows():
                                 cols_poste = st.columns([1, 2.5])
                                 with cols_poste[0]:
                                     st.markdown(f"`{row['Fonction']}`")
                                 with cols_poste[1]:
                                     agent_actuel = row['Personnel']
-                                    
-                                    options = get_options_filtrees(agres, row['Fonction'], agent_actuel)
+                                    options = get_options_filtrees(nouveau_nom_agres, row['Fonction'], agent_actuel)
                                     
                                     default_idx = 0
                                     for opt_idx, opt in enumerate(options):
@@ -329,8 +344,14 @@ try:
                                 row_offset = anchor_xls[0] - anchor_csv[0]
                                 col_offset = anchor_xls[1] - anchor_csv[1]
 
+                        # Injection des modifications du personnel
                         for (r_csv, c_csv), val in modifications_agents.items():
                             ws.cell(row=r_csv + row_offset, column=c_csv + col_offset, value=val)
+                            
+                        # Injection des nouveaux noms de véhicules modifiés manuellement !
+                        for (r_csv, c_csv), val in modifications_engins.items():
+                            if val.strip(): # Évite d'effacer la case si l'utilisateur la vide par erreur
+                                ws.cell(row=r_csv + row_offset, column=c_csv + col_offset, value=val)
                     
                     output = BytesIO()
                     wb.save(output)
