@@ -3,6 +3,7 @@ import pandas as pd
 from io import BytesIO
 import openpyxl
 import os
+import requests
 
 st.set_page_config(
     page_title="Feuille de Garde - L'Isle-en-Dodon", 
@@ -38,11 +39,18 @@ GOOGLE_SHEET_ID = "1WbCH8Q4r2rM2WL1f8KP2o7XaADi-1vjC"
 
 @st.cache_data(ttl=60)
 def charger_donnees_depuis_gsheets(sheet_id):
+    # On télécharge tout le tableur au format Excel pour garder les cases vides intactes
+    url_xlsx = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+    
     try:
-        url_billet = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=BILLET"
-        df_brut = pd.read_csv(url_billet, header=None)
-    except Exception:
-        df_brut = pd.DataFrame()
+        response = requests.get(url_xlsx)
+        fichier_excel = BytesIO(response.content)
+        
+        df_brut = pd.read_excel(fichier_excel, sheet_name='BILLET', header=None, engine='openpyxl')
+        df_eff_brut = pd.read_excel(fichier_excel, sheet_name='EFFECTIF', header=None, engine='openpyxl')
+    except Exception as e:
+        st.error(f"Erreur de connexion au Google Sheets: {e}")
+        return pd.DataFrame(), [], {}
 
     donnees = []
     fonctions_valides = ["CA", "COND", "EQ", "CE B1", "EQ B1", "CE B2", "EQ B2", "OBS", "COND/EQ"]
@@ -107,10 +115,8 @@ def charger_donnees_depuis_gsheets(sheet_id):
 
     liste_agents = []
     dict_agents = {}
-    try:
-        url_effectif = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=EFFECTIF"
-        df_eff_brut = pd.read_csv(url_effectif, header=None)
-        
+    
+    if not df_eff_brut.empty:
         for r in range(1, len(df_eff_brut)):
             row = df_eff_brut.iloc[r]
             nom = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
@@ -143,8 +149,6 @@ def charger_donnees_depuis_gsheets(sheet_id):
             dict_agents[label] = nom_simple
             
         liste_agents = sorted(list(set(liste_agents)))
-    except Exception:
-        pass
 
     return df_garde, liste_agents, dict_agents
 
@@ -159,7 +163,7 @@ try:
     df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
-        st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
+        st.warning("⚠️ Impossible de lire les données. Vérifiez l'ID de votre Google Sheets.")
     else:
         agres_uniques = df_garde['Agrès'].unique()
         modifications_agents = {}
@@ -251,7 +255,7 @@ try:
                     ws = wb['BILLET']
                     
                     for (r, c), val in modifications_agents.items():
-                        # Les coordonnées openpyxl commencent à 1, pandas à 0
+                        # Injection parfaite : on respecte l'indice exact de Pandas (+1 pour openpyxl)
                         ws.cell(row=r + 1, column=c + 1, value=val)
                 
                 output = BytesIO()
