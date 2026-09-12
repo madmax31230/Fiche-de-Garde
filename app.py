@@ -58,10 +58,13 @@ def charger_donnees_depuis_gsheets(sheet_id):
 
     donnees = []
     fonctions_valides = ["CA", "COND", "EQ", "CE B1", "EQ B1", "CE B2", "EQ B2", "OBS", "COND/EQ"]
+    
+    # On ajoute SPECIALITE pour qu'il ne soit pas confondu avec un nom de véhicule
     mots_ignores = ["BILLET", "DE", "GARDE", "EQUIPE", "LUNDI", "MARDI", "MERCREDI", 
                     "JEUDI", "VENDREDI", "SAMEDI", "DIMANCHE", "JANVIER", "FEVRIER", 
                     "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOUT", "SEPTEMBRE", 
-                    "OCTOBRE", "NOVEMBRE", "DECEMBRE", "CONSIGNES", "SPORT", "FMA"]
+                    "OCTOBRE", "NOVEMBRE", "DECEMBRE", "CONSIGNES", "SPORT", "FMA",
+                    "SPECIALITE", "SPECIALITÉ", "SPÉCIALITÉ", "SPÉCIALITE"]
     
     nom_engin_actuel = "GENERAL"
     if not df_brut.empty:
@@ -176,6 +179,12 @@ try:
 
         modifications_agents = {}
         ordre_tailles_souhaite = [4, 6, 3, 2, 5]
+        
+        # Sécurité absolue : on rajoute à la fin toute taille d'équipage qui ne serait pas dans la liste ci-dessus
+        # (Pour éviter qu'un véhicule ne disparaisse si son nombre de postes change)
+        for taille in sorted(groupes_par_taille.keys(), reverse=True):
+            if taille not in ordre_tailles_souhaite:
+                ordre_tailles_souhaite.append(taille)
 
         for nb_postes in ordre_tailles_souhaite:
             if nb_postes in groupes_par_taille:
@@ -219,13 +228,13 @@ try:
             st.markdown("### 📥 Actions")
             
             output = BytesIO()
-            # On force le format de données 'object' (texte) pour éviter l'erreur de conversion float64
+            # On force le format de données 'object' pour contourner le problème float64
             df_export = df_brut_billet.copy().astype(object)
-            df_export = df_export.fillna("") # Nettoyage des valeurs vides
+            df_export = df_export.fillna("")
             
             for (r, c), val in modifications_agents.items():
                 if r < df_export.shape[0] and c < df_export.shape[1]:
-                    df_export.iat[r, c] = val # iat est plus sûr pour remplacer par index
+                    df_export.iat[r, c] = val
 
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_export.to_excel(writer, index=False, header=False, sheet_name='BILLET')
