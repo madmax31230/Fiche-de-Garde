@@ -1,17 +1,15 @@
 import streamlit as st
 import pandas as pd
-import requests
 from io import BytesIO
 import openpyxl
+import os
 
-# 1. Configuration de la page
 st.set_page_config(
     page_title="Feuille de Garde - L'Isle-en-Dodon", 
     page_icon="🚒", 
     layout="wide"
 )
 
-# 2. Styles CSS
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
@@ -247,30 +245,28 @@ try:
         with st.sidebar:
             st.markdown("### 📥 Actions")
             
-            # --- NOUVEAU SYSTEME D'EXPORT ---
-            # Télécharge directement le tableur originel (avec ses couleurs, logo, et bordures)
-            url_export_xlsx = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/export?format=xlsx"
-            response = requests.get(url_export_xlsx)
-            
-            # Utilise openpyxl pour modifier ce document tout en préservant le design
-            wb = openpyxl.load_workbook(BytesIO(response.content))
-            if 'BILLET' in wb.sheetnames:
-                ws = wb['BILLET']
-                for (r, c), val in modifications_agents.items():
-                    # openpyxl commence à 1 (et non 0 comme pandas)
-                    ws.cell(row=r + 1, column=c + 1, value=val)
-            
-            output = BytesIO()
-            wb.save(output)
-            
-            st.download_button(
-                label="📥 Télécharger la Feuille Parfaite", 
-                data=output.getvalue(), 
-                file_name="Feuille_Garde_Mise_A_Jour.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
-                use_container_width=True
-            )
+            if os.path.exists("modele.xlsx"):
+                wb = openpyxl.load_workbook("modele.xlsx")
+                if 'BILLET' in wb.sheetnames:
+                    ws = wb['BILLET']
+                    
+                    for (r, c), val in modifications_agents.items():
+                        # Les coordonnées openpyxl commencent à 1, pandas à 0
+                        ws.cell(row=r + 1, column=c + 1, value=val)
+                
+                output = BytesIO()
+                wb.save(output)
+                
+                st.download_button(
+                    label="📥 Télécharger la Feuille Parfaite", 
+                    data=output.getvalue(), 
+                    file_name="Feuille_Garde_Finale.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    use_container_width=True
+                )
+            else:
+                st.error("❌ Fichier 'modele.xlsx' introuvable sur le serveur. Veuillez l'ajouter à GitHub.")
 
 except Exception as e:
     st.error(f"⚠️ Erreur : {e}")
