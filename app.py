@@ -1,47 +1,28 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import os
 
-# 1. Configuration de la page
 st.set_page_config(
     page_title="Feuille de Garde - L'Isle-en-Dodon", 
     page_icon="🚒", 
     layout="wide"
 )
 
-# 2. Styles CSS
 st.markdown("""
     <style>
-    .main {
-        background-color: #0e1117;
-    }
+    .main { background-color: #0e1117; }
     .header-box {
         background: linear-gradient(90deg, #b71c1c 0%, #d32f2f 100%);
-        padding: 15px;
-        border-radius: 8px;
-        color: white;
-        text-align: center;
-        margin-bottom: 20px;
+        padding: 15px; border-radius: 8px; color: white;
+        text-align: center; margin-bottom: 20px;
     }
-    .header-title {
-        font-size: 1.8rem;
-        font-weight: 800;
-        margin: 0;
-    }
-    .header-subtitle {
-        font-size: 1rem;
-        font-style: italic;
-        margin: 5px 0 0 0;
-        opacity: 0.9;
-    }
+    .header-title { font-size: 1.8rem; font-weight: 800; margin: 0; }
+    .header-subtitle { font-size: 1rem; font-style: italic; margin: 5px 0 0 0; opacity: 0.9; }
     .section-title {
-        color: #ff5252;
-        font-size: 1.3rem;
-        font-weight: 700;
-        margin-top: 25px;
-        margin-bottom: 10px;
-        border-bottom: 2px solid #333;
-        padding-bottom: 5px;
+        color: #ff5252; font-size: 1.3rem; font-weight: 700;
+        margin-top: 25px; margin-bottom: 10px;
+        border-bottom: 2px solid #333; padding-bottom: 5px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -58,8 +39,6 @@ def charger_donnees_depuis_gsheets(sheet_id):
 
     donnees = []
     fonctions_valides = ["CA", "COND", "EQ", "CE B1", "EQ B1", "CE B2", "EQ B2", "OBS", "COND/EQ"]
-    
-    # On ajoute SPECIALITE pour qu'il ne soit pas confondu avec un nom de véhicule
     mots_ignores = ["BILLET", "DE", "GARDE", "EQUIPE", "LUNDI", "MARDI", "MERCREDI", 
                     "JEUDI", "VENDREDI", "SAMEDI", "DIMANCHE", "JANVIER", "FEVRIER", 
                     "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOUT", "SEPTEMBRE", 
@@ -85,11 +64,8 @@ def charger_donnees_depuis_gsheets(sheet_id):
                         if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
                             personnel = p
                     donnees.append({
-                        "row_idx": row_idx, 
-                        "col_personnel": col_idx + 1, 
-                        "Agrès": nom_engin_actuel, 
-                        "Fonction": valeur_maj, 
-                        "Personnel": personnel
+                        "row_idx": row_idx, "col_personnel": col_idx + 1, 
+                        "Agrès": nom_engin_actuel, "Fonction": valeur_maj, "Personnel": personnel
                     })
                 elif not is_ignore and len(valeur_maj) >= 2 and not is_fonction:
                     num_indicatif = ""
@@ -109,7 +85,6 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'effectif
     liste_agents = []
     dict_agents = {}
     try:
@@ -153,7 +128,6 @@ def charger_donnees_depuis_gsheets(sheet_id):
 
     return df_brut, df_garde, liste_agents, dict_agents
 
-# En-tête
 st.markdown("""
     <div class="header-box">
         <p class="header-title">🚒 CENTRE DE SECOURS DE L'ISLE-EN-DODON</p>
@@ -180,8 +154,6 @@ try:
         modifications_agents = {}
         ordre_tailles_souhaite = [4, 6, 3, 2, 5]
         
-        # Sécurité absolue : on rajoute à la fin toute taille d'équipage qui ne serait pas dans la liste ci-dessus
-        # (Pour éviter qu'un véhicule ne disparaisse si son nombre de postes change)
         for taille in sorted(groupes_par_taille.keys(), reverse=True):
             if taille not in ordre_tailles_souhaite:
                 ordre_tailles_souhaite.append(taille)
@@ -214,10 +186,8 @@ try:
                                             
                                     choix_label = st.selectbox(
                                         f"{agres}_{row['Fonction']}_{i}", 
-                                        options=options, 
-                                        index=default_idx, 
-                                        label_visibility="collapsed",
-                                        key=f"agent_{i}_{agres}"
+                                        options=options, index=default_idx, 
+                                        label_visibility="collapsed", key=f"agent_{i}_{agres}"
                                     )
                                     nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
                                 
@@ -228,7 +198,6 @@ try:
             st.markdown("### 📥 Actions")
             
             output = BytesIO()
-            # On force le format de données 'object' pour contourner le problème float64
             df_export = df_brut_billet.copy().astype(object)
             df_export = df_export.fillna("")
             
@@ -238,6 +207,17 @@ try:
 
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_export.to_excel(writer, index=False, header=False, sheet_name='BILLET')
+                
+                # Ajout de l'image si elle est présente
+                if os.path.exists("logo.png"):
+                    try:
+                        from openpyxl.drawing.image import Image
+                        img = Image("logo.png")
+                        img.width = 120  # Largeur en pixels
+                        img.height = 120 # Hauteur en pixels
+                        writer.sheets['BILLET'].add_image(img, 'A1')
+                    except Exception as e:
+                        st.warning(f"Le logo n'a pas pu être chargé : {e}")
             
             st.download_button(
                 label="📥 Télécharger la Feuille Originale", 
