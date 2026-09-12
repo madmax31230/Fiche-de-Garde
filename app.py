@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# 1. Configuration de la page en mode large
+# 1. Configuration de la page
 st.set_page_config(
     page_title="Feuille de Garde - L'Isle-en-Dodon", 
     page_icon="🚒", 
     layout="wide"
 )
 
-# 2. Styles CSS pour un rendu propre et structuré
+# 2. Styles CSS
 st.markdown("""
     <style>
     .main {
@@ -150,7 +150,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
 
     return df_brut, df_garde, liste_agents, dict_agents
 
-# En-tête visuel
+# En-tête
 st.markdown("""
     <div class="header-box">
         <p class="header-title">🚒 CENTRE DE SECOURS DE L'ISLE-EN-DODON</p>
@@ -174,9 +174,7 @@ try:
                 groupes_par_taille[nb_postes] = []
             groupes_par_taille[nb_postes].append((agres, df_agres))
 
-        # Dictionnaire pour stocker les modifications en temps réel via les clés de widget
         modifications_agents = {}
-
         ordre_tailles_souhaite = [4, 6, 3, 2, 5]
 
         for nb_postes in ordre_tailles_souhaite:
@@ -214,25 +212,26 @@ try:
                                     )
                                     nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
                                 
-                                # On sauvegarde la coordonnée exacte dans la grille brute du billet
                                 modifications_agents[(row['row_idx'], row['col_personnel'])] = nouveau_personnel
                             st.divider()
 
         with st.sidebar:
             st.markdown("### 📥 Actions")
             
-            # Génération du fichier Excel en respectant scrupuleusement la grille d'origine du BILLET
             output = BytesIO()
-            df_export = df_brut_billet.copy()
+            # On force le format de données 'object' (texte) pour éviter l'erreur de conversion float64
+            df_export = df_brut_billet.copy().astype(object)
+            df_export = df_export.fillna("") # Nettoyage des valeurs vides
+            
             for (r, c), val in modifications_agents.items():
                 if r < df_export.shape[0] and c < df_export.shape[1]:
-                    df_export.iloc[r, c] = val
+                    df_export.iat[r, c] = val # iat est plus sûr pour remplacer par index
 
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_export.to_excel(writer, index=False, header=False, sheet_name='BILLET')
             
             st.download_button(
-                label="📥 Télécharger la Feuille au Format Original", 
+                label="📥 Télécharger la Feuille Originale", 
                 data=output.getvalue(), 
                 file_name="Feuille_Garde_Originale_Mise_A_Jour.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
