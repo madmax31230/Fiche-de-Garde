@@ -3,12 +3,14 @@ import pandas as pd
 from io import BytesIO
 import os
 
+# 1. Configuration de la page
 st.set_page_config(
     page_title="Feuille de Garde - L'Isle-en-Dodon", 
     page_icon="🚒", 
     layout="wide"
 )
 
+# 2. Styles CSS
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
@@ -23,6 +25,12 @@ st.markdown("""
         color: #ff5252; font-size: 1.3rem; font-weight: 700;
         margin-top: 25px; margin-bottom: 10px;
         border-bottom: 2px solid #333; padding-bottom: 5px;
+    }
+    .vsav-title {
+        color: #4fc3f7; /* Couleur bleue pour distinguer les secours à personne */
+        font-size: 1.5rem; font-weight: 800;
+        margin-top: 10px; margin-bottom: 10px;
+        border-bottom: 3px solid #0288d1; padding-bottom: 5px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -46,6 +54,8 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     "SPECIALITE", "SPECIALITÉ", "SPÉCIALITÉ", "SPÉCIALITE"]
     
     nom_engin_actuel = "GENERAL"
+    vehicules_vus = {} # Dictionnaire pour compter les occurrences des véhicules
+
     if not df_brut.empty:
         for col_idx in range(df_brut.shape[1]):
             for row_idx in range(df_brut.shape[0]):
@@ -78,13 +88,24 @@ def charger_donnees_depuis_gsheets(sheet_id):
                         if val_dessous.replace('.', '', 1).isdigit():
                             num_indicatif = str(int(float(val_dessous)))
                             
-                    if num_indicatif:
-                        nom_engin_actuel = f"{valeur} {num_indicatif}"
+                    base_name = f"{valeur_maj} {num_indicatif}" if num_indicatif else valeur_maj
+                    
+                    # Séparation automatique si un même nom (ex: VSAV) apparaît plusieurs fois
+                    if base_name in vehicules_vus:
+                        vehicules_vus[base_name] += 1
+                        nom_engin_actuel = f"{base_name} {vehicules_vus[base_name]}"
+                        # Si c'est le 2ème, on renomme rétroactivement le 1er en "Nom 1" pour être propre
+                        if vehicules_vus[base_name] == 2:
+                            for d in donnees:
+                                if d["Agrès"] == base_name:
+                                    d["Agrès"] = f"{base_name} 1"
                     else:
-                        nom_engin_actuel = valeur
+                        vehicules_vus[base_name] = 1
+                        nom_engin_actuel = base_name
                     
     df_garde = pd.DataFrame(donnees)
 
+    # Chargement de l'effectif
     liste_agents = []
     dict_agents = {}
     try:
@@ -131,7 +152,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
 st.markdown("""
     <div class="header-box">
         <p class="header-title">🚒 CENTRE DE SECOURS DE L'ISLE-EN-DODON</p>
-        <p class="header-subtitle">Feuille de Garde - Tri personnalisé par taille d'équipage</p>
+        <p class="header-subtitle">Feuille de Garde - Secours à Personne prioritaires</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -142,18 +163,61 @@ try:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
     else:
         agres_uniques = df_garde['Agrès'].unique()
-        groupes_par_taille = {}
+        modifications_agents = {}
         
-        for agres in agres_uniques:
+        # Séparation des VSAV et des autres engins
+        vsav_uniques = [a for a in agres_uniques if "VSAV" in a.upper()]
+        autres_uniques = [a for a in agres_uniques if "VSAV" not in a.upper()]
+
+        # ==========================================
+        # BLOC 1 : LES VSAV TOUT EN HAUT
+        # ==========================================
+        if vsav_uniques:
+            st.markdown('<div class="vsav-title">🚑 VÉHICULES DE SECOURS AUX VICTIMES (VSAV)</div>', unsafe_allow_html=True)
+            
+            for i_veh in range(0, len(vsav_uniques), 3):
+                cols_ligne = st.columns(3)
+                batch = vsav_uniques[i_veh:i_veh+3]
+                
+                for idx_col, agres in enumerate(batch):
+                    df_agres = df_garde[df_garde['Agrès'] == agres]
+                    with cols_ligne[idx_col]:
+                        st.markdown(f"### 🚚 {agres}")
+                        for i, row in df_agres.iterrows():
+                            cols_poste = st.columns([1, 2.5])
+                            with cols_poste[0]:
+                                st.markdown(f"`{row['Fonction']}`")
+                            with cols_poste[1]:
+                                agent_actuel = row['Personnel']
+                                options = [""] + liste_agents if liste_agents else [""]
+                                default_idx = 0
+                                for opt_idx, opt in enumerate(options):
+                                    if agent_actuel.strip().lower() in opt.lower():
+                                        default_idx = opt_idx
+                                        break
+                                        
+                                choix_label = st.selectbox(
+                                    f"{agres}_{row['Fonction']}_{i}", 
+                                    options=options, index=default_idx, 
+                                    label_visibility="collapsed", key=f"agent_{i}_{agres}"
+                                )
+                                nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
+                            
+                            modifications_agents[(row['row_idx'], row['col_personnel'])] = nouveau_personnel
+                        st.divider()
+
+        # ==========================================
+        # BLOC 2 : LE RESTE DES ENGINS TRIÉS PAR TAILLE
+        # ==========================================
+        groupes_par_taille = {}
+        for agres in autres_uniques:
             df_agres = df_garde[df_garde['Agrès'] == agres]
             nb_postes = len(df_agres)
             if nb_postes not in groupes_par_taille:
                 groupes_par_taille[nb_postes] = []
             groupes_par_taille[nb_postes].append((agres, df_agres))
 
-        modifications_agents = {}
         ordre_tailles_souhaite = [4, 6, 3, 2, 5]
-        
         for taille in sorted(groupes_par_taille.keys(), reverse=True):
             if taille not in ordre_tailles_souhaite:
                 ordre_tailles_souhaite.append(taille)
@@ -161,7 +225,6 @@ try:
         for nb_postes in ordre_tailles_souhaite:
             if nb_postes in groupes_par_taille:
                 st.markdown(f'<div class="section-title">Équipages à {nb_postes} postes</div>', unsafe_allow_html=True)
-                
                 vehicules_du_groupe = groupes_par_taille[nb_postes]
                 
                 for i_veh in range(0, len(vehicules_du_groupe), 3):
@@ -196,7 +259,6 @@ try:
 
         with st.sidebar:
             st.markdown("### 📥 Actions")
-            
             output = BytesIO()
             df_export = df_brut_billet.copy().astype(object)
             df_export = df_export.fillna("")
@@ -208,16 +270,15 @@ try:
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_export.to_excel(writer, index=False, header=False, sheet_name='BILLET')
                 
-                # Ajout de l'image si elle est présente
                 if os.path.exists("logo.png"):
                     try:
                         from openpyxl.drawing.image import Image
                         img = Image("logo.png")
-                        img.width = 120  # Largeur en pixels
-                        img.height = 120 # Hauteur en pixels
+                        img.width = 120
+                        img.height = 120
                         writer.sheets['BILLET'].add_image(img, 'A1')
                     except Exception as e:
-                        st.warning(f"Le logo n'a pas pu être chargé : {e}")
+                        pass
             
             st.download_button(
                 label="📥 Télécharger la Feuille Originale", 
