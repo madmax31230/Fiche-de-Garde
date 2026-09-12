@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-import requests
 
 # 1. Configuration de la page en mode large
 st.set_page_config(
-    page_title="Feuille de Garde", 
+    page_title="Feuille de Garde - L'Isle-en-Dodon", 
     page_icon="🚒", 
     layout="wide"
 )
@@ -154,7 +153,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
 # En-tête visuel
 st.markdown("""
     <div class="header-box">
-        <p class="header-title">🚒 CENTRE DE SECOURS</p>
+        <p class="header-title">🚒 CENTRE DE SECOURS DE L'ISLE-EN-DODON</p>
         <p class="header-subtitle">Feuille de Garde - Tri personnalisé par taille d'équipage</p>
     </div>
 """, unsafe_allow_html=True)
@@ -176,7 +175,7 @@ try:
             groupes_par_taille[nb_postes].append((agres, df_agres))
 
         # Dictionnaire pour stocker les modifications en temps réel via les clés de widget
-         modifications_agents = {}
+        modifications_agents = {}
 
         ordre_tailles_souhaite = [4, 6, 3, 2, 5]
 
