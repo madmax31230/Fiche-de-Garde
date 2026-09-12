@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import requests
 
 # 1. Configuration de la page en mode large
 st.set_page_config(
-    page_title="Feuille de Garde - L'Isle-en-Dodon", 
+    page_title="Feuille de Garde", 
     page_icon="🚒", 
     layout="wide"
 )
@@ -46,7 +47,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Ton ID Google Sheets
 GOOGLE_SHEET_ID = "1WbCH8Q4r2rM2WL1f8KP2o7XaADi-1vjC"
 
 @st.cache_data(ttl=60)
@@ -82,7 +82,13 @@ def charger_donnees_depuis_gsheets(sheet_id):
                         p = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
                         if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
                             personnel = p
-                    donnees.append({"Agrès": nom_engin_actuel, "Fonction": valeur_maj, "Personnel": personnel})
+                    donnees.append({
+                        "row_idx": row_idx, 
+                        "col_personnel": col_idx + 1, 
+                        "Agrès": nom_engin_actuel, 
+                        "Fonction": valeur_maj, 
+                        "Personnel": personnel
+                    })
                 elif not is_ignore and len(valeur_maj) >= 2 and not is_fonction:
                     num_indicatif = ""
                     if col_idx + 1 < df_brut.shape[1]:
@@ -101,7 +107,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     
     df_garde = pd.DataFrame(donnees)
 
-    # Chargement de l'effectif depuis Google Sheets avec toutes les spécialités
+    # Chargement de l'effectif
     liste_agents = []
     dict_agents = {}
     try:
@@ -143,18 +149,18 @@ def charger_donnees_depuis_gsheets(sheet_id):
     except Exception:
         pass
 
-    return df_garde, liste_agents, dict_agents
+    return df_brut, df_garde, liste_agents, dict_agents
 
 # En-tête visuel
 st.markdown("""
     <div class="header-box">
-        <p class="header-title">🚒 CENTRE DE SECOURS DE L'ISLE-EN-DODON</p>
+        <p class="header-title">🚒 CENTRE DE SECOURS</p>
         <p class="header-subtitle">Feuille de Garde - Tri personnalisé par taille d'équipage</p>
     </div>
 """, unsafe_allow_html=True)
 
 try:
-    df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
+    df_brut_billet, df_garde, liste_agents, dict_agents = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
@@ -169,10 +175,9 @@ try:
                 groupes_par_taille[nb_postes] = []
             groupes_par_taille[nb_postes].append((agres, df_agres))
 
-        lignes_mises_a_jour = []
+        # Dictionnaire pour stocker les modifications en temps réel via les clés de widget
+         modifications_agents = {}
 
-        # --- ORDRE Souhaité DES TAILLES D'ÉQUIPAGES ---
-        # Tu peux modifier cet ordre directement ici (ex: [4, 6, 3, 2, 5])
         ordre_tailles_souhaite = [4, 6, 3, 2, 5]
 
         for nb_postes in ordre_tailles_souhaite:
@@ -210,24 +215,27 @@ try:
                                     )
                                     nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
                                 
-                                lignes_mises_a_jour.append({
-                                    "Agrès": agres,
-                                    "Fonction": row['Fonction'],
-                                    "Personnel": nouveau_personnel
-                                })
+                                # On sauvegarde la coordonnée exacte dans la grille brute du billet
+                                modifications_agents[(row['row_idx'], row['col_personnel'])] = nouveau_personnel
                             st.divider()
 
         with st.sidebar:
             st.markdown("### 📥 Actions")
+            
+            # Génération du fichier Excel en respectant scrupuleusement la grille d'origine du BILLET
             output = BytesIO()
-            df_final = pd.DataFrame(lignes_mises_a_jour)
+            df_export = df_brut_billet.copy()
+            for (r, c), val in modifications_agents.items():
+                if r < df_export.shape[0] and c < df_export.shape[1]:
+                    df_export.iloc[r, c] = val
+
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_final.to_excel(writer, index=False, sheet_name='Garde')
+                df_export.to_excel(writer, index=False, header=False, sheet_name='BILLET')
             
             st.download_button(
-                label="📥 Télécharger la Feuille Validée", 
+                label="📥 Télécharger la Feuille au Format Original", 
                 data=output.getvalue(), 
-                file_name="Feuille_Garde_Mise_A_Jour.xlsx",
+                file_name="Feuille_Garde_Originale_Mise_A_Jour.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
                 use_container_width=True
