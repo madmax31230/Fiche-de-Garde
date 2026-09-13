@@ -31,15 +31,13 @@ st.markdown("""
         margin-top: 10px; margin-bottom: 10px;
         border-bottom: 3px solid #0288d1; padding-bottom: 5px;
     }
-    /* Style pour rendre l'input de l'engin plus imposant */
-    div[data-baseweb="input"] > input {
-        font-weight: bold;
-        color: #ff5252;
-    }
+    div[data-baseweb="input"] > input { font-weight: bold; color: #ff5252; }
+    .role-text { font-size: 1.2rem; font-weight: bold; text-align: right; padding-top: 35px; }
     </style>
 """, unsafe_allow_html=True)
 
 GOOGLE_SHEET_ID = "1WbCH8Q4r2rM2WL1f8KP2o7XaADi-1vjC"
+KNOWN_BASES = ["VSAV", "VSRM", "VBAL", "VID", "VSMPM", "FPT", "EPC", "CCFM", "VFCDG"]
 
 @st.cache_data(ttl=60)
 def charger_donnees_depuis_gsheets(sheet_id):
@@ -55,22 +53,15 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     "JEUDI", "VENDREDI", "SAMEDI", "DIMANCHE", "JANVIER", "FEVRIER", 
                     "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOUT", "SEPTEMBRE", 
                     "OCTOBRE", "NOVEMBRE", "DECEMBRE", "CONSIGNES", "SPORT", "FMA",
-                    "SPECIALITE", "SPECIALITÉ", "SPÉCIALITÉ", "SPÉCIALITE"]
+                    "SPECIALITE", "SPECIALITÉ", "SPÉCIALITÉ", "SPÉCIALITE", "JOUR", "NUIT", "COMPETENCE"]
     
     INDICATIFS_AUTO = {
-        "VSRM": "VSRM 10",
-        "VFCDG": "VFCDG 88",
-        "FPT": "FPT 11",
-        "EPC": "EPC 13",
-        "VID": "VID 34",
-        "CCFM": "CCFM 29",
-        "VSMPM": "VSMPM 02"
+        "VSRM": "VSRM 10", "VFCDG": "VFCDG 88", "FPT": "FPT 11",
+        "EPC": "EPC 13", "VID": "VID 34", "CCFM": "CCFM 29", "VSMPM": "VSMPM 02"
     }
 
     nom_engin_actuel = "GENERAL"
-    coord_engin_actuel = None
     vehicules_vus = {}
-    anchor_csv = None
 
     if not df_brut.empty:
         for col_idx in range(df_brut.shape[1]):
@@ -84,25 +75,13 @@ def charger_donnees_depuis_gsheets(sheet_id):
                 is_ignore = any(ignore in valeur_maj for ignore in mots_ignores)
                 
                 if is_fonction:
-                    if anchor_csv is None:
-                        anchor_csv = (row_idx, col_idx, valeur_maj)
-                        
                     personnel = ""
                     if col_idx + 1 < df_brut.shape[1]:
                         p = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
                         if p.lower() != "nan" and p != "" and p.upper() not in fonctions_valides:
                             personnel = p
-                    donnees.append({
-                        "row_idx": row_idx, 
-                        "col_personnel": col_idx + 1, 
-                        "Agrès": nom_engin_actuel, 
-                        "coord_engin": coord_engin_actuel, # Mémorisation de la case de l'engin
-                        "Fonction": valeur_maj, 
-                        "Personnel": personnel
-                    })
+                    donnees.append({"Agrès": nom_engin_actuel, "Fonction": valeur_maj, "Personnel": personnel})
                 elif not is_ignore and len(valeur_maj) >= 2 and not is_fonction:
-                    coord_engin_actuel = (row_idx, col_idx) # Sauvegarde des coordonnées de l'engin
-                    
                     num_indicatif = ""
                     if col_idx + 1 < df_brut.shape[1]:
                         val_suiv = str(df_brut.iloc[row_idx, col_idx + 1]).strip()
@@ -118,10 +97,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
                     if base_name == "VSAV":
                         if base_name in vehicules_vus:
                             vehicules_vus[base_name] += 1
-                            if vehicules_vus[base_name] == 2:
-                                nom_engin_actuel = "VSAV 17"
-                            else:
-                                nom_engin_actuel = f"VSAV {vehicules_vus[base_name]}"
+                            nom_engin_actuel = "VSAV 17" if vehicules_vus[base_name] == 2 else f"VSAV {vehicules_vus[base_name]}"
                         else:
                             vehicules_vus[base_name] = 1
                             nom_engin_actuel = "VSAV 98"
@@ -133,8 +109,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
                             nom_engin_actuel = f"{base_name} {vehicules_vus[base_name]}"
                             if vehicules_vus[base_name] == 2:
                                 for d in donnees:
-                                    if d["Agrès"] == base_name:
-                                        d["Agrès"] = f"{base_name} 1"
+                                    if d["Agrès"] == base_name: d["Agrès"] = f"{base_name} 1"
                         else:
                             vehicules_vus[base_name] = 1
                             nom_engin_actuel = base_name
@@ -144,6 +119,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
     liste_agents = []
     dict_agents = {}
     dict_specs = {}
+    dict_comp_string = {} # Pour stocker la chaîne exacte à écrire sous l'agent (Ex: "SGT - CA1E - DIV4")
 
     try:
         url_effectif = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=EFFECTIF"
@@ -155,9 +131,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
             prenom = str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ""
             grade = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ""
             
-            if not nom or nom.lower() == "nan":
-                continue
-                
+            if not nom or nom.lower() == "nan": continue
             nom_simple = f"{nom} {prenom}"
             
             specs_filtre = []
@@ -178,23 +152,21 @@ def charger_donnees_depuis_gsheets(sheet_id):
             if specs_affichage:
                 details.extend(specs_affichage)
                 
-            if details:
-                label = f"{nom_simple} ({' - '.join(details)})"
-            else:
-                label = nom_simple
+            label = f"{nom_simple} ({' - '.join(details)})" if details else nom_simple
                 
             liste_agents.append(label)
             dict_agents[label] = nom_simple
             dict_specs[label] = specs_filtre 
+            dict_comp_string[label] = " - ".join(details) # Ex: "C/C - CA1E"
             
         liste_agents = sorted(list(set(liste_agents)))
     except Exception:
         pass
 
-    return df_garde, liste_agents, dict_agents, anchor_csv, dict_specs
+    return df_garde, liste_agents, dict_agents, dict_specs, dict_comp_string
 
 try:
-    df_garde, liste_agents, dict_agents, anchor_csv, dict_specs = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
+    df_garde, liste_agents, dict_agents, dict_specs, dict_comp_string = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
     
     if df_garde.empty:
         st.warning("⚠️ Impossible de lire l'onglet 'BILLET' de votre Google Sheets.")
@@ -209,149 +181,140 @@ try:
                 if "VSAV" in agres_nom.upper() and fonction.upper() == "CA":
                     if not any(kw in specs_clean for kw in ["CA", "CA1E", "CATE", "CAVSAV"]):
                         est_autorise = False
-                        
                 elif "FPT" in agres_nom.upper() and fonction.upper() == "CA":
                     if not any(kw in specs_clean for kw in ["CATE", "CAFPT"]):
                         est_autorise = False
                         
                 if est_autorise or (agent_actuel_str.strip() != "" and agent_actuel_str.strip().lower() in opt.lower()):
                     options_valides.append(opt)
-                    
             return options_valides
 
         agres_uniques = df_garde['Agrès'].unique()
-        modifications_agents = {}
-        modifications_engins = {} # Dictionnaire pour stocker les nouveaux noms d'engins
+        export_data = [] # Stockera proprement les sélections pour l'exportation
         
         vsav_uniques = [a for a in agres_uniques if "VSAV" in a.upper()]
         autres_uniques = [a for a in agres_uniques if "VSAV" not in a.upper()]
 
-        # BLOC VSAV
-        if vsav_uniques:
-            st.markdown('<div class="vsav-title">🚑 VÉHICULES DE SECOURS AUX VICTIMES (VSAV)</div>', unsafe_allow_html=True)
-            for i_veh in range(0, len(vsav_uniques), 3):
+        def afficher_bloc_engin(liste_agres, title_html=None):
+            if not liste_agres: return
+            if title_html: st.markdown(title_html, unsafe_allow_html=True)
+            
+            for i_veh in range(0, len(liste_agres), 3):
                 cols_ligne = st.columns(3)
-                batch = vsav_uniques[i_veh:i_veh+3]
+                batch = liste_agres[i_veh:i_veh+3]
+                
                 for idx_col, agres in enumerate(batch):
                     df_agres = df_garde[df_garde['Agrès'] == agres]
+                    base_name_pure = next((b for b in KNOWN_BASES if b in agres), agres.split(" ")[0])
+                    
                     with cols_ligne[idx_col]:
-                        # --- NOUVEAU : Champ texte modifiable pour l'engin ---
                         nouveau_nom_agres = st.text_input("🚚 Engin :", value=agres, key=f"edit_engin_{agres}")
+                        veh_data = {'base_name': base_name_pure, 'custom_name': nouveau_nom_agres, 'roles': []}
                         
-                        # Enregistrement du nouveau nom pour l'exportation
-                        coord_engin = df_agres.iloc[0]['coord_engin']
-                        if coord_engin:
-                            modifications_engins[coord_engin] = nouveau_nom_agres
-                            
                         for i, row in df_agres.iterrows():
-                            cols_poste = st.columns([1, 2.5])
-                            with cols_poste[0]:
-                                st.markdown(f"`{row['Fonction']}`")
-                            with cols_poste[1]:
-                                agent_actuel = row['Personnel']
-                                options = get_options_filtrees(nouveau_nom_agres, row['Fonction'], agent_actuel)
-                                
-                                default_idx = 0
-                                for opt_idx, opt in enumerate(options):
-                                    if agent_actuel.strip().lower() in opt.lower() and agent_actuel.strip() != "":
-                                        default_idx = opt_idx
-                                        break
-                                choix_label = st.selectbox(
-                                    f"{agres}_{row['Fonction']}_{i}", 
-                                    options=options, index=default_idx, 
-                                    label_visibility="collapsed", key=f"agent_{i}_{agres}"
-                                )
-                                nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
-                            modifications_agents[(row['row_idx'], row['col_personnel'])] = nouveau_personnel
+                            fonction = row['Fonction']
+                            agent_actuel = row['Personnel'] # Sera pré-rempli sur le Jour par défaut
+                            
+                            c_role, c_jour, c_nuit = st.columns([0.8, 2, 2])
+                            with c_role:
+                                st.markdown(f'<div class="role-text">{fonction}</div>', unsafe_allow_html=True)
+                            with c_jour:
+                                options_j = get_options_filtrees(nouveau_nom_agres, fonction, agent_actuel)
+                                def_idx = next((idx for idx, opt in enumerate(options_j) if agent_actuel.strip().lower() in opt.lower() and agent_actuel.strip()!=""), 0)
+                                jour_lbl = st.selectbox("☀️ Jour", options=options_j, index=def_idx, key=f"j_{agres}_{fonction}_{i}")
+                            with c_nuit:
+                                options_n = get_options_filtrees(nouveau_nom_agres, fonction, "")
+                                nuit_lbl = st.selectbox("🌙 Nuit", options=options_n, index=0, key=f"n_{agres}_{fonction}_{i}")
+                            
+                            veh_data['roles'].append({
+                                'fonction': fonction,
+                                'jour_name': dict_agents.get(jour_lbl, ""),
+                                'jour_comp': dict_comp_string.get(jour_lbl, ""),
+                                'nuit_name': dict_agents.get(nuit_lbl, ""),
+                                'nuit_comp': dict_comp_string.get(nuit_lbl, "")
+                            })
                         st.divider()
+                        export_data.append(veh_data)
 
-        # BLOC AUTRES ENGINS
+        # Affichage des blocs sur la page
+        afficher_bloc_engin(vsav_uniques, '<div class="vsav-title">🚑 VÉHICULES DE SECOURS AUX VICTIMES (VSAV)</div>')
+        
         groupes_par_taille = {}
         for agres in autres_uniques:
-            df_agres = df_garde[df_garde['Agrès'] == agres]
-            nb_postes = len(df_agres)
-            if nb_postes not in groupes_par_taille:
-                groupes_par_taille[nb_postes] = []
-            groupes_par_taille[nb_postes].append((agres, df_agres))
+            nb_postes = len(df_garde[df_garde['Agrès'] == agres])
+            if nb_postes not in groupes_par_taille: groupes_par_taille[nb_postes] = []
+            groupes_par_taille[nb_postes].append(agres)
 
-        ordre_tailles_souhaite = [4, 6, 3, 2, 5]
+        ordre_tailles = [4, 6, 3, 2, 5]
         for taille in sorted(groupes_par_taille.keys(), reverse=True):
-            if taille not in ordre_tailles_souhaite:
-                ordre_tailles_souhaite.append(taille)
+            if taille not in ordre_tailles: ordre_tailles.append(taille)
 
-        for nb_postes in ordre_tailles_souhaite:
+        for nb_postes in ordre_tailles:
             if nb_postes in groupes_par_taille:
-                st.markdown(f'<div class="section-title">Équipages à {nb_postes} postes</div>', unsafe_allow_html=True)
-                vehicules_du_groupe = groupes_par_taille[nb_postes]
-                
-                for i_veh in range(0, len(vehicules_du_groupe), 3):
-                    cols_ligne = st.columns(3)
-                    batch = vehicules_du_groupe[i_veh:i_veh+3]
-                    for idx_col, (agres, df_agres) in enumerate(batch):
-                        with cols_ligne[idx_col]:
-                            # --- NOUVEAU : Champ texte modifiable pour l'engin ---
-                            nouveau_nom_agres = st.text_input("🚚 Engin :", value=agres, key=f"edit_engin_{agres}")
-                            
-                            coord_engin = df_agres.iloc[0]['coord_engin']
-                            if coord_engin:
-                                modifications_engins[coord_engin] = nouveau_nom_agres
-                                
-                            for i, row in df_agres.iterrows():
-                                cols_poste = st.columns([1, 2.5])
-                                with cols_poste[0]:
-                                    st.markdown(f"`{row['Fonction']}`")
-                                with cols_poste[1]:
-                                    agent_actuel = row['Personnel']
-                                    options = get_options_filtrees(nouveau_nom_agres, row['Fonction'], agent_actuel)
-                                    
-                                    default_idx = 0
-                                    for opt_idx, opt in enumerate(options):
-                                        if agent_actuel.strip().lower() in opt.lower() and agent_actuel.strip() != "":
-                                            default_idx = opt_idx
-                                            break
-                                    choix_label = st.selectbox(
-                                        f"{agres}_{row['Fonction']}_{i}", 
-                                        options=options, index=default_idx, 
-                                        label_visibility="collapsed", key=f"agent_{i}_{agres}"
-                                    )
-                                    nouveau_personnel = dict_agents.get(choix_label, choix_label.split(" (")[0] if choix_label else "")
-                                modifications_agents[(row['row_idx'], row['col_personnel'])] = nouveau_personnel
-                            st.divider()
+                afficher_bloc_engin(groupes_par_taille[nb_postes], f'<div class="section-title">Équipages à {nb_postes} postes</div>')
 
+        # SECTION EXPORTATION
         with st.sidebar:
             st.markdown("### 📥 Actions")
             
             if os.path.exists("modele.xlsx"):
                 try:
                     wb = openpyxl.load_workbook("modele.xlsx")
-                    if 'BILLET' in wb.sheetnames:
-                        ws = wb['BILLET']
-                        
-                        row_offset = 1
-                        col_offset = 1
-                        
-                        if anchor_csv:
-                            anchor_xls = None
-                            for c in range(1, 30):
-                                for r in range(1, 100):
-                                    val = ws.cell(row=r, column=c).value
-                                    if val and str(val).strip().upper() == anchor_csv[2]:
-                                        anchor_xls = (r, c)
+                    ws = wb['BILLET'] if 'BILLET' in wb.sheetnames else wb.active
+                    
+                    # 1. On scanne l'Excel pour trouver l'emplacement des blocs véhicules
+                    found_anchors = []
+                    for c in range(1, 30):
+                        for r in range(1, 150):
+                            val = ws.cell(row=r, column=c).value
+                            if isinstance(val, str):
+                                val_u = val.strip().upper()
+                                for base in KNOWN_BASES:
+                                    if val_u == base or val_u.startswith(base + " ") or val_u.startswith(base + "\n"):
+                                        found_anchors.append({'r': r, 'c': c, 'base': base})
                                         break
-                                if anchor_xls: break
+                    
+                    # 2. Injection des données basées sur les blocs trouvés
+                    used_anchors = set()
+                    for veh in export_data:
+                        b_name = veh['base_name']
+                        matched = None
+                        
+                        # Associe le véhicule au bon bloc dans Excel
+                        for idx, anc in enumerate(found_anchors):
+                            if idx not in used_anchors and anc['base'] == b_name:
+                                matched = anc
+                                used_anchors.add(idx)
+                                break
+                        
+                        if matched:
+                            # Remplace le nom du véhicule (si modifié)
+                            if veh['custom_name'].strip():
+                                ws.cell(row=matched['r'], column=matched['c'], value=veh['custom_name'])
+                                
+                            curr_r = matched['r'] + 1
+                            c = matched['c']
                             
-                            if anchor_xls:
-                                row_offset = anchor_xls[0] - anchor_csv[0]
-                                col_offset = anchor_xls[1] - anchor_csv[1]
-
-                        # Injection des modifications du personnel
-                        for (r_csv, c_csv), val in modifications_agents.items():
-                            ws.cell(row=r_csv + row_offset, column=c_csv + col_offset, value=val)
-                            
-                        # Injection des nouveaux noms de véhicules modifiés manuellement !
-                        for (r_csv, c_csv), val in modifications_engins.items():
-                            if val.strip(): # Évite d'effacer la case si l'utilisateur la vide par erreur
-                                ws.cell(row=r_csv + row_offset, column=c_csv + col_offset, value=val)
+                            # Recherche du rôle (ex: CA, COND) juste en dessous du titre
+                            for role in veh['roles']:
+                                func = role['fonction']
+                                found_r = None
+                                for search_r in range(curr_r, curr_r + 20): 
+                                    val = ws.cell(row=search_r, column=c).value
+                                    if isinstance(val, str) and val.strip().upper() == func.upper():
+                                        found_r = search_r
+                                        break
+                                        
+                                if found_r:
+                                    # Injection JOUR (colonne C+1)
+                                    ws.cell(row=found_r, column=c+1, value=role['jour_name'])
+                                    ws.cell(row=found_r+1, column=c+1, value=role['jour_comp']) # Compétence juste en dessous
+                                    
+                                    # Injection NUIT (colonne C+2)
+                                    ws.cell(row=found_r, column=c+2, value=role['nuit_name'])
+                                    ws.cell(row=found_r+1, column=c+2, value=role['nuit_comp']) # Compétence juste en dessous
+                                    
+                                    curr_r = found_r + 1
                     
                     output = BytesIO()
                     wb.save(output)
@@ -359,13 +322,13 @@ try:
                     st.download_button(
                         label="📥 Télécharger la Feuille Parfaite", 
                         data=output.getvalue(), 
-                        file_name="Feuille_Garde_Finale.xlsx",
+                        file_name="Feuille_Garde_Jour_Nuit.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         type="primary",
                         use_container_width=True
                     )
                 except Exception as e:
-                    st.error(f"Erreur d'édition : {e}")
+                    st.error(f"Erreur d'édition Excel : {e}")
             else:
                 st.error("❌ Fichier 'modele.xlsx' introuvable sur le serveur.")
 
