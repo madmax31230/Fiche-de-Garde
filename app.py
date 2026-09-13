@@ -5,7 +5,7 @@ import openpyxl
 import os
 
 st.set_page_config(
-    page_title="Feuille de Garde - L'Isle-en-Dodon", 
+    page_title="Feuille de Garde CIS CARSALADE", 
     page_icon="🚒", 
     layout="wide"
 )
@@ -119,7 +119,7 @@ def charger_donnees_depuis_gsheets(sheet_id):
     liste_agents = []
     dict_agents = {}
     dict_specs = {}
-    dict_comp_string = {} # Pour stocker la chaîne exacte à écrire sous l'agent (Ex: "SGT - CA1E - DIV4")
+    dict_comp_string = {} 
 
     try:
         url_effectif = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=EFFECTIF"
@@ -157,13 +157,20 @@ def charger_donnees_depuis_gsheets(sheet_id):
             liste_agents.append(label)
             dict_agents[label] = nom_simple
             dict_specs[label] = specs_filtre 
-            dict_comp_string[label] = " - ".join(details) # Ex: "C/C - CA1E"
+            dict_comp_string[label] = " - ".join(details) 
             
         liste_agents = sorted(list(set(liste_agents)))
     except Exception:
         pass
 
     return df_garde, liste_agents, dict_agents, dict_specs, dict_comp_string
+
+st.markdown("""
+    <div class="header-box">
+        <p class="header-title">🚒 CIS CARSALADE</p>
+        <p class="header-subtitle">Feuille de Garde - Secours à Personne prioritaires</p>
+    </div>
+""", unsafe_allow_html=True)
 
 try:
     df_garde, liste_agents, dict_agents, dict_specs, dict_comp_string = charger_donnees_depuis_gsheets(GOOGLE_SHEET_ID)
@@ -190,7 +197,7 @@ try:
             return options_valides
 
         agres_uniques = df_garde['Agrès'].unique()
-        export_data = [] # Stockera proprement les sélections pour l'exportation
+        export_data = [] 
         
         vsav_uniques = [a for a in agres_uniques if "VSAV" in a.upper()]
         autres_uniques = [a for a in agres_uniques if "VSAV" not in a.upper()]
@@ -213,7 +220,7 @@ try:
                         
                         for i, row in df_agres.iterrows():
                             fonction = row['Fonction']
-                            agent_actuel = row['Personnel'] # Sera pré-rempli sur le Jour par défaut
+                            agent_actuel = row['Personnel'] 
                             
                             c_role, c_jour, c_nuit = st.columns([0.8, 2, 2])
                             with c_role:
@@ -236,7 +243,6 @@ try:
                         st.divider()
                         export_data.append(veh_data)
 
-        # Affichage des blocs sur la page
         afficher_bloc_engin(vsav_uniques, '<div class="vsav-title">🚑 VÉHICULES DE SECOURS AUX VICTIMES (VSAV)</div>')
         
         groupes_par_taille = {}
@@ -253,7 +259,6 @@ try:
             if nb_postes in groupes_par_taille:
                 afficher_bloc_engin(groupes_par_taille[nb_postes], f'<div class="section-title">Équipages à {nb_postes} postes</div>')
 
-        # SECTION EXPORTATION
         with st.sidebar:
             st.markdown("### 📥 Actions")
             
@@ -262,7 +267,6 @@ try:
                     wb = openpyxl.load_workbook("modele.xlsx")
                     ws = wb['BILLET'] if 'BILLET' in wb.sheetnames else wb.active
                     
-                    # 1. On scanne l'Excel pour trouver l'emplacement des blocs véhicules
                     found_anchors = []
                     for c in range(1, 30):
                         for r in range(1, 150):
@@ -274,13 +278,11 @@ try:
                                         found_anchors.append({'r': r, 'c': c, 'base': base})
                                         break
                     
-                    # 2. Injection des données basées sur les blocs trouvés
                     used_anchors = set()
                     for veh in export_data:
                         b_name = veh['base_name']
                         matched = None
                         
-                        # Associe le véhicule au bon bloc dans Excel
                         for idx, anc in enumerate(found_anchors):
                             if idx not in used_anchors and anc['base'] == b_name:
                                 matched = anc
@@ -288,14 +290,12 @@ try:
                                 break
                         
                         if matched:
-                            # Remplace le nom du véhicule (si modifié)
                             if veh['custom_name'].strip():
                                 ws.cell(row=matched['r'], column=matched['c'], value=veh['custom_name'])
                                 
                             curr_r = matched['r'] + 1
                             c = matched['c']
                             
-                            # Recherche du rôle (ex: CA, COND) juste en dessous du titre
                             for role in veh['roles']:
                                 func = role['fonction']
                                 found_r = None
@@ -306,13 +306,11 @@ try:
                                         break
                                         
                                 if found_r:
-                                    # Injection JOUR (colonne C+1)
                                     ws.cell(row=found_r, column=c+1, value=role['jour_name'])
-                                    ws.cell(row=found_r+1, column=c+1, value=role['jour_comp']) # Compétence juste en dessous
+                                    ws.cell(row=found_r+1, column=c+1, value=role['jour_comp']) 
                                     
-                                    # Injection NUIT (colonne C+2)
                                     ws.cell(row=found_r, column=c+2, value=role['nuit_name'])
-                                    ws.cell(row=found_r+1, column=c+2, value=role['nuit_comp']) # Compétence juste en dessous
+                                    ws.cell(row=found_r+1, column=c+2, value=role['nuit_comp']) 
                                     
                                     curr_r = found_r + 1
                     
